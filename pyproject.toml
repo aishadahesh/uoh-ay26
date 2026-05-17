@@ -1,0 +1,23 @@
+[build-system]
+requires      = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name        = "uoh-ay26"
+version     = "0.1.0"
+description = "Signal Reconstruction (Denoising): FC vs RNN vs LSTM — Assignment 01"
+requires-python = ">=3.10"
+
+dependencies = [
+    "torch>=2.2",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "pandas>=2.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

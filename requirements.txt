@@ -1,0 +1,19 @@
+# uoh-ay26 -- Signal Reconstruction: FC vs RNN vs LSTM
+# Assignment 01 | AI Agents Orchestration
+# ---------------------------------------------------------
+
+# Core deep learning
+torch>=2.2
+
+# Numerical computing
+numpy>=1.26
+
+# Plotting & visualisation
+matplotlib>=3.8
+
+# Metrics & results export
+pandas>=2.2
+
+# -- Development / Testing (optional) --------------------
+# pytest>=8
+# pytest-cov>=5
