@@ -39,10 +39,10 @@ plain RNN, giving the natural ordering: LSTM ≥ RNN > FC.
 
 Dataset item
 ------------
-  x_flat  : Tensor[104]   FC input  — [mixed_window(100) | C(4)]
-  x_seq   : Tensor[100,5] RNN/LSTM  — per step: [mixed_val, C1,C2,C3,C4]
+  x_flat  : Tensor[105]   FC input  — [mixed_window(100) | C(4) | sigma]
+  x_seq   : Tensor[100,6] RNN/LSTM  — per step: [mixed_val, C1,C2,C3,C4,sigma]
   y       : Tensor[100]   target    — clean component-c window
-  sigma_t : Tensor[1]     metadata  — noise level (NOT fed to models)
+  sigma_t : Tensor[1]     metadata  — noise level
 
 Constants
 ---------
@@ -65,8 +65,8 @@ SAMPLE_RATE    = 1000                              # Hz  (matches reference repo
 DURATION       = 10                               # seconds
 N_TOTAL        = SAMPLE_RATE * DURATION            # 10 000 samples / full signal
 CONTEXT_WINDOW = 100                              # samples per example window (0.1 s — 1 cycle at 10Hz, 7 at 70Hz)
-FC_INPUT_SIZE  = CONTEXT_WINDOW + N_FREQS          # = 104  (no sigma)
-SEQ_FEATURES   = 1 + N_FREQS                      # 5   (mixed_val + C1..C4, no sigma)
+FC_INPUT_SIZE  = CONTEXT_WINDOW + N_FREQS + 1      # = 105 (mixed window + C + sigma)
+SEQ_FEATURES   = 1 + N_FREQS + 1                  # 6   (mixed_val + C1..C4 + sigma)
 NOISE_LEVELS   = [0.0, 0.1, 0.3, 0.5, 1.0]        # 0.0 = pure separation (no noise), others add noise
 
 
@@ -98,40 +98,34 @@ def make_example(
     noise_levels: list = NOISE_LEVELS,
 ) -> tuple[np.ndarray, float, np.ndarray, np.ndarray]:
     """
-    Generate one separation example: (C, sigma, mixed_window, clean_c_window).
+    Generate one denoising example: (C, sigma, noisy_window, clean_window).
 
-    Task: extract the clean version of component c from the mixed signal of
-    N_FREQS noisy sinusoids.
+    Task: reconstruct the clean version of the selected sinusoid from its
+    noisy observation.
 
     Algorithm:
     1. Choose target component index c_idx → build C (one-hot).
     2. Choose sigma from noise_levels.
-    3. Sample window start position.
-    4. For every frequency k:
-         a. A_k ~ U(0.7, 1.3),  φ_k ~ U(0, 2π)  (random per window).
-         b. Build full N_TOTAL-sample clean sinusoid.
-         c. Add Gaussian noise with std = sigma * A_k.
-    5. mixed_window = Σ_k noisy_k[start : start+CONTEXT_WINDOW].
-    6. Return C, sigma, mixed_window, clean_c_window.
+    3. Sample A ~ U(0.7, 1.3), phi ~ U(0, 2*pi), and a window start.
+    4. Build the selected clean sinusoid and add Gaussian noise.
+    5. Return C, sigma, noisy_window, clean_window.
     """
     c_idx = int(np.random.randint(0, len(frequencies)))
     C     = one_hot(c_idx)
     sigma = float(np.random.choice(noise_levels))
     start = int(np.random.randint(0, N_TOTAL - CONTEXT_WINDOW))
 
-    mixed_window:   np.ndarray = np.zeros(CONTEXT_WINDOW, dtype=np.float32)
-    clean_c_window: np.ndarray | None = None
+    A     = float(np.random.uniform(0.7, 1.3))
+    phi   = float(np.random.uniform(0.0, 2.0 * np.pi))
+    clean = generate_clean_signal(frequencies[c_idx], A, phi)
+    noisy = add_gaussian_noise(clean, A, sigma)
 
-    for k, freq in enumerate(frequencies):
-        A_k   = float(np.random.uniform(0.7, 1.3))
-        phi_k = float(np.random.uniform(0.0, 2.0 * np.pi))
-        clean_k = generate_clean_signal(freq, A_k, phi_k)
-        noisy_k = add_gaussian_noise(clean_k, A_k, sigma)
-        mixed_window += noisy_k[start : start + CONTEXT_WINDOW]
-        if k == c_idx:
-            clean_c_window = clean_k[start : start + CONTEXT_WINDOW]
-
-    return C, sigma, mixed_window, clean_c_window  # type: ignore[return-value]
+    return (
+        C,
+        sigma,
+        noisy[start : start + CONTEXT_WINDOW],
+        clean[start : start + CONTEXT_WINDOW],
+    )
 
 
 # ── Dataset ──────────────────────────────────────────────────────────────────
@@ -148,10 +142,10 @@ class SignalReconstructionDataset(Dataset):
 
     __getitem__ returns
     -------------------
-    x_flat  : FloatTensor [104]  — flat FC input  [mixed_window(100) | C(4)]
-    x_seq   : FloatTensor [100,5] — sequential RNN/LSTM input per step [mixed_val | C1..C4]
+    x_flat  : FloatTensor [105]  — flat FC input  [mixed_window(100) | C(4) | sigma]
+    x_seq   : FloatTensor [100,6] — sequential RNN/LSTM input per step [mixed_val | C1..C4 | sigma]
     y       : FloatTensor [100]  — clean target component window
-    sigma_t : FloatTensor [1]    — noise level (metadata only, NOT fed to models)
+    sigma_t : FloatTensor [1]    — noise level metadata
     """
 
     def __init__(
@@ -195,13 +189,16 @@ class SignalReconstructionDataset(Dataset):
         noisy = self._noisy[idx]  # [100]
         clean = self._clean[idx]  # [100]
 
-        # FC flat input: [mixed_window(100) | C(4)]
-        x_flat = np.concatenate([noisy, C])
+        sigma_arr = np.array([sigma], dtype=np.float32)
 
-        # RNN/LSTM sequential input: per timestep [mixed_val, C1,C2,C3,C4]
+        # FC flat input: [mixed_window(100) | C(4) | sigma(1)]
+        x_flat = np.concatenate([noisy, C, sigma_arr])
+
+        # RNN/LSTM sequential input: per timestep [mixed_val, C1,C2,C3,C4,sigma]
         C_rep  = np.tile(C, (CONTEXT_WINDOW, 1))    # [100, 4]
-        x_seq  = np.concatenate(                    # [100, 5]
-            [noisy.reshape(-1, 1), C_rep], axis=1
+        sigma_rep = np.full((CONTEXT_WINDOW, 1), sigma, dtype=np.float32)
+        x_seq  = np.concatenate(                    # [100, 6]
+            [noisy.reshape(-1, 1), C_rep, sigma_rep], axis=1
         )
 
         return (

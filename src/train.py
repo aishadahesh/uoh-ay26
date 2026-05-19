@@ -134,7 +134,7 @@ def train_model(
 
     if verbose:
         print(f"  Best val MSE: {best_val_loss:.6f}  (epoch {best_epoch})"
-              f"  →  saved {checkpoint_path.name}")
+              f"  -> saved {checkpoint_path.name}")
 
     history["best_epoch"]    = best_epoch
     history["best_val_loss"] = best_val_loss

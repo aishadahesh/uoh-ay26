@@ -71,7 +71,7 @@ def plot_signals(noise_level: float = 0.10, save: bool = True) -> plt.Figure:
     if save:
         p = PLOTS_DIR / "signals.png"
         fig.savefig(p, dpi=150, bbox_inches="tight")
-        print(f"Saved → {p}")
+        print(f"Saved -> {p}")
     return fig
 
 
@@ -101,7 +101,7 @@ def plot_window_example(save: bool = True) -> plt.Figure:
     if save:
         p = PLOTS_DIR / "window_example.png"
         fig.savefig(p, dpi=150, bbox_inches="tight")
-        print(f"Saved → {p}")
+        print(f"Saved -> {p}")
     return fig
 
 
@@ -131,7 +131,7 @@ def plot_training_loss(
     if save:
         p = PLOTS_DIR / "training_loss.png"
         fig.savefig(p, dpi=150, bbox_inches="tight")
-        print(f"Saved → {p}")
+        print(f"Saved -> {p}")
     return fig
 
 
@@ -165,7 +165,7 @@ def plot_prediction_vs_true(
     if save:
         p = PLOTS_DIR / "prediction_vs_true.png"
         fig.savefig(p, dpi=150, bbox_inches="tight")
-        print(f"Saved → {p}")
+        print(f"Saved -> {p}")
     return fig
 
 
@@ -211,7 +211,7 @@ def plot_mse_per_frequency(
     if save:
         p = PLOTS_DIR / "mse_per_frequency.png"
         fig.savefig(p, dpi=150, bbox_inches="tight")
-        print(f"Saved → {p}")
+        print(f"Saved -> {p}")
     return fig
 
 
@@ -287,7 +287,7 @@ def plot_reconstruction_per_freq(
     if save:
         p = PLOTS_DIR / "reconstruction_per_freq.png"
         fig.savefig(p, dpi=150, bbox_inches="tight")
-        print(f"Saved → {p}")
+        print(f"Saved -> {p}")
     return fig
 
 def plot_noise_vs_mse(sweep_df, save: bool = True) -> plt.Figure:
@@ -312,5 +312,5 @@ def plot_noise_vs_mse(sweep_df, save: bool = True) -> plt.Figure:
     if save:
         p = PLOTS_DIR / "noise_vs_mse.png"
         fig.savefig(p, dpi=150, bbox_inches="tight")
-        print(f"Saved → {p}")
+        print(f"Saved -> {p}")
     return fig

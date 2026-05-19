@@ -4,16 +4,16 @@ models.py
 Three architectures for signal RECONSTRUCTION (denoising, MSE loss).
 
   FCNet   — Fully Connected baseline
-            input  [batch, 54]   = [noisy_window(50) | C(4)]   (no sigma — model infers noise)
-            output [batch, 50]   = predicted clean window
+            input  [batch, 105]  = [mixed_window(100) | C(4) | sigma]
+            output [batch, 100]  = predicted clean window
 
   RNNNet  — Vanilla RNN (Many-to-Many)
-            input  [batch, 50, 5] per-step [noisy_val | C1,C2,C3,C4]  (no sigma)
-            output [batch, 50]
+            input  [batch, 100, 6] per-step [mixed_val | C1,C2,C3,C4 | sigma]
+            output [batch, 100]
 
   LSTMNet — LSTM (gated memory, Many-to-Many)
-            input  [batch, 50, 5]  (no sigma)
-            output [batch, 50]
+            input  [batch, 100, 6]
+            output [batch, 100]
 
 Architecture improvements (inspired by reference best-practices):
   - FCNet   : BatchNorm1d + Dropout(0.1) for training stability
@@ -90,9 +90,9 @@ class RNNNet(nn.Module):
     Hidden state: h_t = tanh(W_h·h_{t-1} + W_x·x_t + b)
 
     Architecture:
-        RNN(input=6, hidden=h, num_layers=2, dropout=0.1, batch_first=True)
-        LayerNorm(h)
-        Linear(h, 1) at every time step → squeeze → [batch, 10]
+        bidirectional RNN(input=6, hidden=h, num_layers=2, dropout=0.1, batch_first=True)
+        LayerNorm(2h)
+        Linear(2h, 1) at every time step
 
     LayerNorm stabilises hidden states across the sequence.
     Orthogonal init (see _init_recurrent_weights) prevents early gradient issues.
@@ -106,17 +106,18 @@ class RNNNet(nn.Module):
             batch_first=True,
             nonlinearity="tanh",
             dropout=0.1 if num_layers > 1 else 0.0,
+            bidirectional=True,
         )
-        self.layer_norm = nn.LayerNorm(hidden_size)
-        self.fc         = nn.Linear(hidden_size, 1)
+        self.layer_norm = nn.LayerNorm(hidden_size * 2)
+        self.fc         = nn.Linear(hidden_size * 2, 1)
         _init_recurrent_weights(self)
 
     def forward(self, x_flat: torch.Tensor, x_seq: torch.Tensor) -> torch.Tensor:
-        # x_seq: [batch, 10, 6]
-        out, _ = self.rnn(x_seq)        # [batch, 10, hidden]
+        # x_seq: [batch, CONTEXT_WINDOW, SEQ_FEATURES]
+        out, _ = self.rnn(x_seq)        # [batch, CONTEXT_WINDOW, hidden*2]
         out    = self.layer_norm(out)   # stable normalisation
-        out    = self.fc(out)           # [batch, 10, 1]
-        return out.squeeze(-1)          # [batch, 10]
+        out    = self.fc(out)           # [batch, CONTEXT_WINDOW, 1]
+        return out.squeeze(-1)          # [batch, CONTEXT_WINDOW]
 
 
 # ── LSTM ──────────────────────────────────────────────────────────────────────
@@ -138,9 +139,9 @@ class LSTMNet(nn.Module):
     When f_t ≈ 1: ∂C_t/∂C_{t-1} ≈ 1 — gradients flow without vanishing.
 
     Architecture:
-        LSTM(input=6, hidden=h, num_layers=2, dropout=0.1, batch_first=True)
-        LayerNorm(h)
-        Linear(h, 1) at every time step → squeeze → [batch, 10]
+        bidirectional LSTM(input=6, hidden=h, num_layers=2, dropout=0.1, batch_first=True)
+        LayerNorm(2h)
+        Linear(2h, 1) at every time step
     """
 
     def __init__(self, hidden_size: int = 128, num_layers: int = 1) -> None:
@@ -150,14 +151,15 @@ class LSTMNet(nn.Module):
             num_layers=num_layers,
             batch_first=True,
             dropout=0.1 if num_layers > 1 else 0.0,
+            bidirectional=True,
         )
-        self.layer_norm = nn.LayerNorm(hidden_size)
-        self.fc         = nn.Linear(hidden_size, 1)
+        self.layer_norm = nn.LayerNorm(hidden_size * 2)
+        self.fc         = nn.Linear(hidden_size * 2, 1)
         _init_recurrent_weights(self)
 
     def forward(self, x_flat: torch.Tensor, x_seq: torch.Tensor) -> torch.Tensor:
-        # x_seq: [batch, 10, 6]
-        out, _ = self.lstm(x_seq)       # [batch, 10, hidden]
+        # x_seq: [batch, CONTEXT_WINDOW, SEQ_FEATURES]
+        out, _ = self.lstm(x_seq)       # [batch, CONTEXT_WINDOW, hidden*2]
         out    = self.layer_norm(out)   # stable normalisation
-        out    = self.fc(out)           # [batch, 10, 1]
-        return out.squeeze(-1)          # [batch, 10]
+        out    = self.fc(out)           # [batch, CONTEXT_WINDOW, 1]
+        return out.squeeze(-1)          # [batch, CONTEXT_WINDOW]

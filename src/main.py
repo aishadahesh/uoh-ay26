@@ -55,10 +55,10 @@ args = parser.parse_args()
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print(f"\n{'='*60}")
-print(f"  Signal Reconstruction — FC vs RNN vs LSTM")
+print(f"  Signal Reconstruction - FC vs RNN vs LSTM")
 print(f"  Group: uoh-ay26  |  Device: {DEVICE}")
 print(f"  Task: MSE(prediction, clean_window)")
-print(f"  Input: [mixed_window(50) | C(4)] → clean_c[50]  (separation: extract 1 component from noisy mix of all 4)")
+print(f"  Input: [noisy_window(100) | C(4) | sigma] -> clean_window[100]")
 print(f"{'='*60}\n")
 
 
@@ -78,18 +78,18 @@ train_loader, val_loader, test_loader = get_dataloaders(
 print(f"  Train: {len(train_loader.dataset):>6}  "
       f"Val: {len(val_loader.dataset):>6}  "
       f"Test: {len(test_loader.dataset):>6}")
-print(f"  FC  input: [batch, 54]     RNN/LSTM input: [batch, 50, 5]")
-print(f"  Target:    [batch, 50]     Loss: MSELoss")
+print(f"  FC  input: [batch, 105]    RNN/LSTM input: [batch, 100, 6]")
+print(f"  Target:    [batch, 100]    Loss: MSELoss")
 
 
 # ── 3. Define models ──────────────────────────────────────────────────────────
 model_registry = {}
 if args.model in ("all", "fc"):
-    model_registry["FC"]   = FCNet  (hidden_size=64)
+    model_registry["FC"]   = FCNet  (hidden_size=16)
 if args.model in ("all", "rnn"):
-    model_registry["RNN"]  = RNNNet (hidden_size=128, num_layers=1)
+    model_registry["RNN"]  = RNNNet (hidden_size=64, num_layers=2)
 if args.model in ("all", "lstm"):
-    model_registry["LSTM"] = LSTMNet(hidden_size=256, num_layers=1)
+    model_registry["LSTM"] = LSTMNet(hidden_size=128, num_layers=2)
 
 print("\n  Model parameter counts:")
 for name, model in model_registry.items():
@@ -101,7 +101,7 @@ for name, model in model_registry.items():
 print(f"\n[3/7] Training ({args.epochs} epochs each, MSE loss) ...")
 histories = {}
 for name, model in model_registry.items():
-    print(f"\n  ─── {name} ───")
+    print(f"\n  --- {name} ---")
     histories[name] = train_model(
         model, train_loader, val_loader,
         n_epochs=args.epochs, lr=args.lr,
@@ -133,9 +133,9 @@ sweep_rows = []
 if not args.skip_sweep:
     print("\n[5/7] Noise sweep ...")
     model_configs = [
-        {"name": "FC",   "class": FCNet,   "kwargs": {"hidden_size": 64}},
-        {"name": "RNN",  "class": RNNNet,  "kwargs": {"hidden_size": 128, "num_layers": 1}},
-        {"name": "LSTM", "class": LSTMNet, "kwargs": {"hidden_size": 256, "num_layers": 1}},
+        {"name": "FC",   "class": FCNet,   "kwargs": {"hidden_size": 16}},
+        {"name": "RNN",  "class": RNNNet,  "kwargs": {"hidden_size": 64, "num_layers": 2}},
+        {"name": "LSTM", "class": LSTMNet, "kwargs": {"hidden_size": 128, "num_layers": 2}},
     ]
     sweep_rows = noise_sweep(
         model_configs=model_configs,

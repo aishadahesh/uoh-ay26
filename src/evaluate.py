@@ -57,7 +57,7 @@ def get_predictions(
             pred   = model(x_flat, x_seq).cpu().numpy()  # [batch, W]
             y_np   = y.numpy()                           # [batch, W]
 
-            # x_flat layout: [noisy(W) | C(N_FREQS)]  — sigma is the 4th DataLoader item
+            # x_flat layout: [noisy(W) | C(N_FREQS) | sigma]
             x_np     = x_flat.cpu().numpy()
             x_noisy  = x_np[:, :CONTEXT_WINDOW]                            # [batch, W]
             c_onehot = x_np[:, CONTEXT_WINDOW : CONTEXT_WINDOW + N_FREQS] # [batch, N_FREQS]
@@ -169,7 +169,7 @@ def noise_sweep(
     -------
     List of {"model", "noise_level", "mse"}
     """
-    from train import train_model  # local import avoids circularity
+    from train import RESULTS_DIR, train_model  # local import avoids circularity
 
     results = []
     for cfg in model_configs:
@@ -187,6 +187,9 @@ def noise_sweep(
             m = ModelClass(**kwargs)
             train_model(m, tr, va, n_epochs=n_epochs, device=device,
                         model_name=f"{name}_sw{int(sigma*100)}", verbose=verbose)
+            ckpt = RESULTS_DIR / f"{name}_sw{int(sigma*100)}_best.pt"
+            if ckpt.exists():
+                m.load_state_dict(torch.load(ckpt, map_location=device, weights_only=True))
             res = evaluate_model(m, te, device, model_name=f"{name}_sw")
             results.append({"model": name, "noise_level": sigma, "mse": res["mse"]})
             print(f"MSE={res['mse']:.6f}")
@@ -202,6 +205,6 @@ def save_metrics_csv(rows: list[dict], path: Path | None = None) -> pd.DataFrame
         path = RESULTS_DIR / "metrics.csv"
     df = pd.DataFrame(rows)
     df.to_csv(path, index=False)
-    print(f"\nMetrics saved → {path}")
+    print(f"\nMetrics saved -> {path}")
     return df
 
