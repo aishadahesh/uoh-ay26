@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Signal Reconstruction &mdash; FC vs RNN vs LSTM
 
 <div align="center">
@@ -27,11 +26,11 @@
 > This is a **denoising / regression** task &mdash; not classification.
 
 ```
-Input  -->  [ C1 C2 C3 C4 | sigma | y~1 y~2 ... y~10 ]   (15 values, flat)
-                   |
-             Neural Network
-                   |
-Output -->  [ y^1  y^2  y^3  y^4  y^5  y^6  y^7  y^8  y^9  y^10 ]  (10 clean samples)
+Input  -->  [ y~1 y~2 ... y~100 | C1 C2 C3 C4 | sigma ]   (105 values, flat)
+                        |
+                  Neural Network
+                        |
+Output -->  [ y^1  y^2  ...  y^100 ]   (100 clean samples)
 
 Loss  =  MSE( prediction, clean_window )
 ```
@@ -40,9 +39,9 @@ Three architectures compete on the same task:
 
 | Model | Input shape | Architecture | Params |
 |-------|-------------|--------------|--------|
-| **FC** &mdash; Fully Connected | `[batch, 15]` flat | Linear×3 + BatchNorm + Dropout | ~20,000 |
-| **RNN** &mdash; Vanilla Recurrent | `[batch, 10, 6]` sequence | 2-layer RNN + LayerNorm + ortho-init | ~51,000 |
-| **LSTM** &mdash; Long Short-Term Memory | `[batch, 10, 6]` sequence | 2-layer LSTM + LayerNorm + ortho-init | ~202,000 |
+| **FC** &mdash; Fully Connected | `[batch, 105]` flat | Linear(105→64)→ReLU→Linear(64→100) | ~13,300 |
+| **RNN** &mdash; Bidirectional Recurrent | `[batch, 100, 6]` sequence | BiRNN(hidden=128) + LayerNorm + ortho-init | ~35,600 |
+| **LSTM** &mdash; Bidirectional Long Short-Term Memory | `[batch, 100, 6]` sequence | BiLSTM(hidden=128) + LayerNorm + ortho-init | ~139,000 |
 
 ---
 
@@ -63,7 +62,7 @@ x(t) = A * sin(2*pi * f * t + phi) + eta(t)
 | `sigma` | in {0.00, 0.01, 0.05, 0.10, 0.20} | Noise level as fraction of A |
 
 **Sampling:** 1000 Hz, total signal = 10,000 samples.
-Each example draws a random **10-sample window** from the full signal.
+Each example draws a random **100-sample window** (100 ms) from the full signal.
 
 ---
 
@@ -73,7 +72,7 @@ Each example draws a random **10-sample window** from the full signal.
 
 ![Signals](results/plots/signals.png)
 
-> One 10-sample window &mdash; noisy input vs clean target:
+> One 100-sample window &mdash; noisy input vs clean target:
 
 ![Window Example](results/plots/window_example.png)
 
@@ -84,94 +83,93 @@ Each example draws a random **10-sample window** from the full signal.
 ### FC &mdash; Fully Connected Network
 
 ```
-x_flat  [batch, 15]
+x_flat  [batch, 105]
     |
-    +-- noisy_window  [10]  --+
-    +-- one_hot C     [4]   --+-- flat concatenation
-    +-- sigma         [1]  --+
+    +-- noisy_window  [100]  --+
+    +-- one_hot C      [4]   --+-- flat concatenation
+    +-- sigma          [1]   --+
           |
-   Linear(15 -> 128) -> BatchNorm1d -> ReLU -> Dropout(0.1)
+   Linear(105 -> 64) -> ReLU
           |
-   Linear(128 -> 128) -> BatchNorm1d -> ReLU -> Dropout(0.1)
+   Linear(64 -> 100)
           |
-   Linear(128 -> 10)
-          |
-   y_hat  [batch, 10]
+   y_hat  [batch, 100]
 ```
 
-- **Parameters:** ~20,000
-- **BatchNorm** normalises each hidden layer's activations &mdash; faster convergence, less sensitivity to learning rate.
-- **Dropout(0.1)** prevents overfitting on repeated noise patterns.
-- **Strength:** Fast, simple; the condition inputs (C, sigma) tell it almost everything.
-- **Limitation:** No recurrence &mdash; treats the 10 noisy samples as an unordered bag of values.
+- **Parameters:** ~13,300
+- **Strength:** Fast and simple; the conditioning inputs (C, sigma) explicitly tell the model which frequency and noise level to expect, so it can directly learn the mapping without needing temporal structure.
+- **Limitation:** No recurrence &mdash; treats the 100 noisy samples as an unordered bag of values. Cannot exploit the temporal ordering of the signal.
 
 ---
 
-### RNN &mdash; Vanilla Recurrent Network
+### RNN &mdash; Bidirectional Vanilla Recurrent Network
 
 ```
-x_seq  [batch, 10, 6]   -- one row per time step: [noisy_val, C1,C2,C3,C4, sigma]
+x_seq  [batch, 100, 6]   -- one row per time step: [noisy_val, C1,C2,C3,C4, sigma]
     |
-    v  (step by step, 2 stacked layers)
-  h_t = tanh( W_h * h_{t-1}  +  W_x * x_t  +  b )    <- per layer
-  Dropout(0.1) between layer 1 and layer 2
+    v  (bidirectional: forward pass + backward pass in parallel)
+  forward  h_t  = tanh( W_h * h_{t-1}  +  W_x * x_t  +  b )
+  backward h_t' = tanh( W_h'* h_{t+1}' +  W_x'* x_t  +  b')
     |
-  LayerNorm(128)       <- stabilises hidden states
+  concat [h_t, h_t']   [batch, 100, 256]
     |
-    +-- at every step: Linear(128 -> 1) --> scalar prediction
+  LayerNorm(256)        <- stabilises combined hidden states
     |
-  [y^1, y^2, ..., y^10]  stacked  -->  [batch, 10]
+  Linear(256 -> 1) at every step --> scalar prediction
+    |
+  [y^1, y^2, ..., y^100]  stacked  -->  [batch, 100]
 ```
 
-- **Parameters:** ~51,000
-- **Orthogonal weight init** &mdash; preserves gradient norms at start; avoids early vanishing.
-- **LayerNorm** normalises hidden states across the feature dimension each step.
-- **Dropout(0.1)** applied between the two stacked RNN layers.
-- **Key equation:** gradient proportional to product of Jacobians over 10 steps.
+- **Parameters:** ~35,600
+- **Bidirectional:** Each output step sees context from **both past and future** time steps — especially valuable for sinusoidal denoising since the waveform is symmetric.
+- **Orthogonal weight init** &mdash; preserves gradient norms at initialisation; avoids early vanishing through 100 steps.
+- **LayerNorm** normalises hidden states across the feature dimension at each step.
 
 ---
 
-### LSTM &mdash; Long Short-Term Memory
+### LSTM &mdash; Bidirectional Long Short-Term Memory
 
 ```
-x_seq  [batch, 10, 6]
+x_seq  [batch, 100, 6]
     |
-    v  (step by step, 2 stacked layers)
+    v  (bidirectional: forward + backward)
   f_t = sigmoid( W_f * [h_{t-1}, x_t] + b_f )   <- forget gate
   i_t = sigmoid( W_i * [h_{t-1}, x_t] + b_i )   <- input gate
   g_t = tanh(    W_g * [h_{t-1}, x_t] + b_g )
   C_t = f_t * C_{t-1}  +  i_t * g_t             <- cell state update
   o_t = sigmoid( W_o * [h_{t-1}, x_t] + b_o )   <- output gate
   h_t = o_t * tanh(C_t)
-  Dropout(0.1) between layer 1 and layer 2
     |
-  LayerNorm(128)       <- stabilises hidden states
+  concat [h_t, h_t']   [batch, 100, 256]
     |
-    +-- at every step: Linear(128 -> 1) --> scalar prediction
+  LayerNorm(256)        <- stabilises cell output
     |
-  [y^1, y^2, ..., y^10]  stacked  -->  [batch, 10]
+  Linear(256 -> 1) at every step --> scalar prediction
+    |
+  [y^1, y^2, ..., y^100]  stacked  -->  [batch, 100]
 ```
 
-- **Parameters:** ~202,000
-- **Advantage:** When `f_t ~ 1`, the cell-state gradient is also ~1 &mdash; no vanishing.
-- **Orthogonal weight init** gives the gates a clean starting point.
-- **LayerNorm** stabilises the output of each cell across all 10 steps.
-- **Why better than RNN:** 4 gate matrices control the cell state explicitly &mdash; gradients can flow freely.
+- **Parameters:** ~139,000
+- **Gated cell state:** When `f_t ~ 1`, the gradient flows back through the cell unchanged &mdash; no vanishing over long sequences.
+- **Orthogonal weight init** gives the four gate matrices a clean, norm-preserving starting point.
+- **LayerNorm** stabilises outputs across all 100 time steps.
+- **Trade-off:** 4× more parameters than RNN &mdash; more expressive but needs more data to converge.
 
 ---
 
 ## Input Encoding
 
-### FC path &mdash; flat vector `[15]`
+### FC path &mdash; flat vector `[105]`
 
 ```
-Index:  0  1  2  3  4  5  6  7  8  9 | 10 11 12 13 | 14
-        +---------------------------------+-----------+----+
-Value:  y~1 y~2 ...             y~10  | C1 C2 C3 C4 | sigma
-        +-- noisy window (10) --------+- one-hot(4)-+----+
+Index:   0   1   2  ...  99  | 100 101 102 103 | 104
+         +--------------------+-----------------+-------+
+Value:   y~1 y~2 ... y~100   | C1  C2  C3  C4  | sigma
+         +-- noisy window ----+-- one-hot(4) ---+-------+
+              (100 values)          (4 values)   (1 value)
 ```
 
-### RNN / LSTM path &mdash; sequence `[10, 6]`
+### RNN / LSTM path &mdash; sequence `[100, 6]`
 
 ```
 Timestep t:  [ y~_t  |  C1  C2  C3  C4  |  sigma ]   (6 features per step)
@@ -179,6 +177,8 @@ Timestep t:  [ y~_t  |  C1  C2  C3  C4  |  sigma ]   (6 features per step)
             noisy val     freq class      noise level
             (changes)    (repeated)      (repeated)
 ```
+
+The conditioning inputs (C, sigma) are broadcast to every time step so the recurrent layers always know the signal class and noise strength.
 
 ---
 
@@ -190,10 +190,60 @@ Timestep t:  [ y~_t  |  C1  C2  C3  C4  |  sigma ]   (6 features per step)
 | Optimizer | Adam (`lr=1e-3`, `weight_decay=1e-4`) |
 | Scheduler | ReduceLROnPlateau (`patience=5`, `factor=0.5`) |
 | Gradient clipping | `max_norm=1.0` |
-| Epochs | 50 |
+| Early stopping | `patience=15` epochs |
+| Default epochs | 100 |
 | Batch size | 64 |
 | Train / Val / Test | 70% / 15% / 15% |
 | Best checkpoint | Saved on minimum validation MSE |
+
+---
+
+## Parameter Selection Rationale
+
+### Optimizer: Adam with `lr=1e-3`
+
+Adam combines momentum and adaptive per-parameter learning rates, making it robust to noisy gradients without manual tuning. `lr=1e-3` is the well-established default that works across a wide range of architectures. SGD would require careful momentum and lr scheduling; RMSProp lacks the momentum term that helps with the saddle points in RNN/LSTM loss surfaces.
+
+### Weight Decay: `1e-4`
+
+A small L2 penalty discourages very large weights without significantly slowing convergence. With only 10,000 training examples and the LSTM having ~139K parameters, unconstrained weights could overfit. `1e-4` is a conservative choice that regularises without distorting the loss landscape.
+
+### Scheduler: ReduceLROnPlateau (`patience=5`, `factor=0.5`)
+
+Rather than decaying the learning rate on a fixed schedule, this scheduler halves the LR whenever validation MSE stops improving for 5 consecutive epochs. This is robust to the non-convex loss surfaces of RNNs/LSTMs where early plateaus are common. `factor=0.5` gives a noticeable reduction without collapsing the LR too aggressively.
+
+### Gradient Clipping: `max_norm=1.0`
+
+Backpropagation through 100 time steps can produce gradient norms that grow exponentially (**exploding gradients**), especially in the vanilla RNN. Clipping the global gradient norm to 1.0 prevents catastrophic parameter updates. The threshold 1.0 is a standard choice that clips only genuine explosions while leaving normal gradients unaffected.
+
+### Early Stopping: `patience=15`
+
+Stops training if validation MSE does not improve for 15 consecutive epochs, saving the best checkpoint. This prevents wasted compute and guards against overfitting in the later epochs when the LR scheduler has already reduced the learning rate substantially.
+
+### Batch Size: 64
+
+A batch of 64 provides stable gradient estimates on CPU/GPU without requiring excessive memory. Larger batches (e.g. 256) converge faster per epoch but generalise slightly worse on small datasets; smaller batches are noisier. 64 is a practical middle ground for this dataset size (~10,000 examples).
+
+### Hidden Size: 128 (RNN/LSTM)
+
+128 units give the recurrent layers enough capacity to model four distinct sinusoidal frequencies at five noise levels without over-parameterising. The bidirectional design doubles the effective representation to 256, which is then projected to a single output value per step.
+
+### Window Size: 100 samples
+
+At 1000 Hz, 100 samples equals **100 ms** of signal:
+
+| Frequency | Period (samples) | Coverage in 100-sample window |
+|-----------|-----------------|-------------------------------|
+| 1 Hz | 1000 | **10%** of a period &mdash; slow ramp, hardest |
+| 2 Hz | 500 | **20%** of a period &mdash; visible slope |
+| 5 Hz | 200 | **50%** of a period &mdash; half-sine visible |
+| 7 Hz | ~143 | **~70%** of a period &mdash; clearest oscillation |
+
+100 samples is the minimum that makes 7 Hz clearly identifiable while still being challenging enough at 1 Hz to differentiate model quality.
+
+### Orthogonal Weight Initialisation
+
+For RNN and LSTM recurrent weight matrices, orthogonal initialisation (eigenvalues on the unit circle) ensures that the hidden-state norm is neither amplified nor shrunk at the start of training. This dramatically reduces the number of epochs needed before the recurrent layers produce meaningful gradients.
 
 ---
 
@@ -211,40 +261,82 @@ Timestep t:  [ y~_t  |  C1  C2  C3  C4  |  sigma ]   (6 features per step)
 
 ![Prediction vs True](results/plots/prediction_vs_true.png)
 
+### Per-Frequency Reconstruction
+
+> Reconstruction quality broken down by signal frequency:
+
+![Reconstruction per Frequency](results/plots/reconstruction_per_freq.png)
+
 ### MSE per Frequency
 
 > Which frequency is hardest to reconstruct?
 
 ![MSE per Frequency](results/plots/mse_per_frequency.png)
 
-**Why 1 Hz is hardest:** A 10-sample window at 1000 Hz covers only **1% of one full period**.
-The model sees an almost flat line &mdash; very little oscillation shape is visible.
-At 7 Hz, 10 samples cover **70% of one period** &mdash; the shape is clearly recognisable.
+**Why 1 Hz is hardest:** A 100-sample window at 1000 Hz covers only **10% of one full period**.
+The model sees an almost-flat slowly-rising line &mdash; very little oscillation shape is visible, and any noise strongly distorts the perceived slope.
+At 7 Hz, 100 samples cover **~70% of one period** &mdash; the sinusoidal shape is clearly recognisable to all three models.
 
-| Frequency | Period (samples) | Coverage in 10-sample window |
-|-----------|-----------------|------------------------------|
-| 1 Hz | 1000 | 1% of a period &mdash; nearly flat |
-| 2 Hz | 500 | 2% of a period &mdash; tiny slope |
-| 5 Hz | 200 | 5% of a period &mdash; visible curve |
-| 7 Hz | ~143 | ~7% of a period &mdash; clearest shape |
+### Noise Sweep: MSE vs. Sigma
+
+> How does reconstruction quality degrade as noise increases?
+
+![Noise vs MSE](results/plots/noise_vs_mse.png)
+
+---
+
+### Summary Table (test set)
+
+| Model | MSE | MAE | Pearson r |
+|-------|-----|-----|-----------|
+| **RNN** | **0.00522** | **0.0456** | **0.9589** |
+| FC | 0.00706 | 0.0524 | 0.9549 |
+| LSTM | 0.00835 | 0.0556 | 0.9457 |
+
+### Noise Sweep Results
+
+| Noise &sigma; | FC MSE | RNN MSE | LSTM MSE |
+|--------------|--------|---------|----------|
+| 0.00 | 1.06 &times; 10&sup3; | **7.0 &times; 10&sup5;** | 9.3 &times; 10&sup5; |
+| 0.10 | 1.91 &times; 10&sup3; | **8.4 &times; 10&sup4;** | 1.02 &times; 10&sup3; |
+| 0.30 | 4.50 &times; 10&sup3; | **3.84 &times; 10&sup3;** | 4.76 &times; 10&sup3; |
+| 0.50 | 9.94 &times; 10&sup3; | **7.58 &times; 10&sup3;** | 1.02 &times; 10&sup2; |
+| 1.00 | 2.68 &times; 10&sup2; | **2.29 &times; 10&sup2;** | 2.62 &times; 10&sup2; |
+
+---
+
+### Results Analysis
+
+**RNN wins overall** with the lowest MSE (0.00522), best MAE (0.0456), and highest correlation (0.9589) &mdash; outperforming both FC and the more complex LSTM.
+
+**Why does RNN beat LSTM here?**
+1. **Dataset size vs. capacity.** With ~7,000 training examples, the LSTM (~139K parameters) is under-constrained relative to the RNN (~35K parameters). The extra gating machinery gives LSTM more expressive power than the task requires, leading to slower convergence and slightly higher test MSE.
+2. **Short effective dependencies.** Even at 1 Hz (the hardest frequency), the model only sees 10% of a period &mdash; neighbouring samples are strongly correlated and the RNN's simple `tanh` recurrence is sufficient to capture this local structure without needing explicit forget/input/output gates.
+3. **Bidirectionality levels the field.** Both RNN and LSTM are bidirectional, so both have access to the full temporal context. This removes one of LSTM's traditional advantages (handling long-range dependencies) and means the simpler model can compete directly.
+
+**Why is FC competitive despite no recurrence?**
+The FC model receives the one-hot frequency class `C` and noise level `sigma` directly as inputs. This explicit conditioning tells the network almost everything it needs to know: it only needs to learn one denoising filter per (frequency, sigma) combination. The temporal ordering of the 100 noisy samples is less important than knowing *which* sinusoid to reconstruct.
+
+**Noise sensitivity (sweep):**
+All three models follow the same trend: MSE grows roughly linearly with &sigma; after the zero-noise baseline. RNN maintains the lowest MSE at every tested noise level. At &sigma; = 0 (no noise), the recurrent models achieve near-zero MSE (&sim;10&sup5;) while FC still has residual error (&sim;10&sup3;) because it cannot exploit temporal structure to denoise.
+
+**Frequency difficulty:**
+Consistent with the window-coverage analysis: **1 Hz is the hardest frequency** for all models. At 1 Hz, 100 samples represent only 10% of one period &mdash; the signal is nearly linear within the window, making it look similar across many phase values. All models improve at higher frequencies where the oscillation is more visible.
 
 ---
 
 ## Why MSE?
 
-```
-L = (1 / N*W) * sum over n,t of ( y_hat_{n,t} - y_{n,t} )^2
+$$L = \frac{1}{N \cdot W} \sum_{n=1}^{N} \sum_{t=1}^{W} \left(\hat{y}_{n,t} - y_{n,t}\right)^2$$
 
-  N = batch size
-  W = window size (10)
-```
+where $N$ = batch size and $W$ = window size (100).
 
 - Penalises large errors quadratically &mdash; outliers are heavily punished.
-- Optimal predictor under Gaussian noise assumption (matches our noise model).
+- Optimal predictor under Gaussian noise assumption (matches our noise model `eta ~ N(0, (sigma*A)^2)`).
 - Directly interpretable: MSE = 0 means perfect reconstruction.
+- Differentiable everywhere &mdash; smooth gradient signal for Adam.
 
-**Baseline:** A model that always predicts **zero** achieves `MSE = E[A^2 / 2] ~= 0.54`
-(average signal power at A ~ Uniform(0.7, 1.3)). Every trained model must beat this.
+**Naive baseline:** A model that always predicts **zero** achieves `MSE = E[A^2 / 2] ≈ 0.54` (average signal power at A ~ Uniform(0.7, 1.3)). All three trained models beat this by two orders of magnitude.
 
 ---
 
@@ -259,7 +351,7 @@ pip install -r requirements.txt
 ### Run the full pipeline
 
 ```bash
-# Train and evaluate all three models
+# Train and evaluate all three models (default: 100 epochs, 10,000 samples)
 python src/main.py
 
 # Train a specific model
@@ -267,12 +359,23 @@ python src/main.py --model fc
 python src/main.py --model rnn
 python src/main.py --model lstm
 
-# Custom settings
-python src/main.py --model all --epochs 100 --n-samples 20000 --batch-size 128
+# More epochs and a larger dataset (used for final results)
+python src/main.py --model all --epochs 200 --n-samples 20000
 
-# Skip the slow noise sweep
-python src/main.py --skip-sweep
+# Skip the noise sweep (faster iteration during development)
+python src/main.py --model all --skip-sweep
 ```
+
+**CLI flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | `all` | Which model(s) to train: `all`, `fc`, `rnn`, `lstm` |
+| `--epochs` | `100` | Maximum training epochs (early stopping may trigger earlier) |
+| `--n-samples` | `10000` | Total dataset size before train/val/test split |
+| `--batch-size` | `64` | Mini-batch size |
+| `--lr` | `1e-3` | Initial Adam learning rate |
+| `--skip-sweep` | off | Skip per-noise-level sweep (saves ~3× runtime) |
 
 ### Run tests
 
@@ -293,11 +396,12 @@ uoh-ay26/
 +-- pyproject.toml            <- project metadata
 |
 +-- src/
+|   +-- config.py             <- shared constants (window size, frequencies, noise levels)
 |   +-- data_generator.py     <- signal generation, SignalReconstructionDataset
 |   +-- models.py             <- FCNet, RNNNet, LSTMNet
-|   +-- train.py              <- training loop (MSELoss, Adam, scheduler)
-|   +-- evaluate.py           <- MSE/MAE/Corr metrics, noise sweep
-|   +-- plots.py              <- all 6 visualisations
+|   +-- train.py              <- training loop (MSELoss, Adam, scheduler, early stopping)
+|   +-- evaluate.py           <- MSE/MAE/Corr metrics
+|   +-- plots.py              <- all visualisations
 |   +-- main.py               <- CLI entry point
 |
 +-- tests/
@@ -311,13 +415,14 @@ uoh-ay26/
 |       +-- window_example.png
 |       +-- training_loss.png
 |       +-- prediction_vs_true.png
+|       +-- reconstruction_per_freq.png
 |       +-- mse_per_frequency.png
 |       +-- noise_vs_mse.png
 |
 +-- docs/
     +-- PRD.md                <- product requirements
     +-- PLAN.md               <- implementation plan
-    +-- TODO.md               <- 900-task tracker
+    +-- TODO.md               <- task tracker
 ```
 
 ---
@@ -326,12 +431,14 @@ uoh-ay26/
 
 | Observation | Explanation |
 |-------------|-------------|
-| At sigma=0, MSE near 0 | No noise &mdash; perfect reconstruction is trivial |
-| 1 Hz is hardest | 10 samples = 1% of period &mdash; nearly flat window |
-| 7 Hz is easiest | 10 samples = 70% of period &mdash; shape is visible |
-| LSTM >= RNN | Gated cell state protects temporal structure |
-| FC competitive | Explicit C and sigma inputs carry most of the information |
-| MSE grows with sigma | Higher noise = harder to recover the true signal |
+| RNN beats LSTM | Small dataset + short dependencies &mdash; gating overhead hurts, not helps |
+| FC is competitive | Explicit `C` and `sigma` inputs carry most of the task information |
+| At sigma=0, recurrent MSE &sim; 0 | No noise &mdash; RNN/LSTM exploit temporal structure for near-perfect reconstruction |
+| At sigma=0, FC still has residual error | Without recurrence, FC cannot average out noise across the window |
+| 1 Hz is hardest | 100 samples = 10% of period &mdash; almost-linear window; hard to distinguish frequency |
+| 7 Hz is easiest | 100 samples = 70% of period &mdash; oscillation shape is clearly visible |
+| MSE grows with sigma | Higher noise = harder to recover the true signal; all models degrade similarly |
+| All models beat zero-baseline by 100× | Trained MSE ~ 0.005–0.008 vs. naive baseline ~ 0.54 |
 
 ---
 
@@ -350,8 +457,3 @@ uoh-ay26/
 Built with PyTorch &middot; NumPy &middot; Matplotlib &middot; Pandas
 
 </div>
-=======
-# uoh-Aiyo
-Orchestration of AI Agents 
-test test
->>>>>>> ac67f4be2b0e98988c06f85d7a624747e341f920
