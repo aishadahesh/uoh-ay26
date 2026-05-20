@@ -1,43 +1,82 @@
 # PRD — Dataset
 
 ## Overview
-The dataset consists of synthetic sinusoidal signals at 4 frequencies, with configurable noise.
+The dataset consists of synthetic mixed sinusoidal signals.
+Four frequency components are generated simultaneously and summed (with per-component noise)
+to form the network input. The network must separate one chosen component from the mixture.
+
+**Task type:** Regression / component separation (not classification)  
+**Loss:** MSELoss
+
+---
 
 ## Signal Generation
 
+For each training example, all four components are generated independently:
+
 ```
-x_clean(t) = A · sin(2π · f · t + φ)
-x_noisy(t) = x_clean(t) + η(t)
+For k in {0, 1, 2, 3}:
+    S_k(t) = A_k · sin(2π · f_k · t + φ_k)
+    noisy_k(t) = S_k(t) + η_k(t),   η_k ~ N(0, (σ · A_k)²)
+
+Mixed(t) = noisy_0(t) + noisy_1(t) + noisy_2(t) + noisy_3(t)   <- INPUT
+Target = S_{c_idx}(t)                                             <- OUTPUT
 ```
 
-- **A**: amplitude sampled from Uniform[1 - ε, 1 + ε], ε = 0.05
-- **φ**: phase sampled from Uniform[0, 2π]
-- **η(t)**: noise sampled from N(0, (noise_level · A)²) or Uniform[−noise_level·A, +noise_level·A]
-- **Fs**: 1000 Hz (sampling rate)
-- **Duration**: 10 s → 10 000 samples per full signal
+| Parameter | Distribution | Notes |
+|-----------|-------------|-------|
+| f_k | {1, 2, 5, 7} Hz | Fixed frequencies |
+| A_k | Uniform(0.7, 1.3) | Independent per component |
+| φ_k | Uniform(0, 2π) | Independent per component |
+| σ | {0.00, 0.10, 0.30, 0.50, 1.00} | Shared across all k |
+| Fs | 1000 Hz | Sampling rate |
+| Duration | 10 s | 10,000 samples per full signal |
+
+---
 
 ## Windowing
 
-Each dataset sample is a **sliding window** of `SEQ_LEN = 200` samples extracted at a random start position from a freshly generated signal. This creates diverse training examples with varying phase offsets.
+A random start position `s` is drawn from `[0, 9900]`.
+A **100-sample (100 ms) window** is cut from the full mixed signal:
 
-## Labels — One-Hot Encoding
+```
+input_window = Mixed[s : s + 100]     <- 100 noisy mixed samples
+target_window = S_{c_idx}[s : s + 100] <- 100 clean component samples
+```
 
-| Index | Frequency | One-Hot    |
-|-------|-----------|------------|
-| 0     | 1 Hz (S1) | [1, 0, 0, 0] |
-| 1     | 2 Hz (S2) | [0, 1, 0, 0] |
-| 2     | 5 Hz (S5) | [0, 0, 1, 0] |
-| 3     | 7 Hz (S7) | [0, 0, 0, 1] |
+---
 
-> Integer labels are used internally for `CrossEntropyLoss`. One-hot representation is used for display and explanation.
+## Selector Encoding
+
+| c_idx | Frequency | One-hot C |
+|-------|-----------|----------|
+| 0 | 1 Hz | [1, 0, 0, 0] |
+| 1 | 2 Hz | [0, 1, 0, 0] |
+| 2 | 5 Hz | [0, 0, 1, 0] |
+| 3 | 7 Hz | [0, 0, 0, 1] |
+
+---
 
 ## Dataset Splits
 
-| Split | Fraction | Default size (n_per_class=800) |
-|-------|----------|--------------------------------|
-| Train | 70%      | 2240 samples                   |
-| Val   | 15%      | 480 samples                    |
-| Test  | 15%      | 480 samples                    |
+| Split | Fraction | Default size (n=10,000) |
+|-------|----------|------------------------|
+| Train | 70% | 7,000 samples |
+| Val | 15% | 1,500 samples |
+| Test | 15% | 1,500 samples |
+
+Seed = 42 for reproducibility.
+
+---
+
+## Input / Output Shapes
+
+| Path | Tensor | Shape | Contents |
+|------|--------|-------|----------|
+| FC | `x_flat` | `[batch, 105]` | `[mixed_window(100) \| C(4) \| sigma(1)]` |
+| RNN/LSTM | `x_seq` | `[batch, 100, 6]` | per step: `[mixed_val, C1,C2,C3,C4, sigma]` |
+| Target | `y` | `[batch, 100]` | clean component window |
+
 
 ## Noise Sweep Experiment
 

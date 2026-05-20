@@ -37,10 +37,10 @@
 - [x] Define `SAMPLE_RATE = 1000` Hz
 - [x] Define `DURATION = 10` seconds
 - [x] Define `N_TOTAL = 10 000` samples
-- [x] Define `CONTEXT_WINDOW = 10` samples
-- [x] Define `FC_INPUT_SIZE = 15`
+- [x] Define `CONTEXT_WINDOW = 100` samples
+- [x] Define `FC_INPUT_SIZE = 105`
 - [x] Define `SEQ_FEATURES = 6`
-- [x] Define `NOISE_LEVELS = [0.0, 0.01, 0.05, 0.10, 0.20]`
+- [x] Define `NOISE_LEVELS = [0.0, 0.1, 0.3, 0.5, 1.0]`
 - [x] Define `N_FREQS = 4`
 
 ### 1.2 One-Hot Encoding
@@ -97,8 +97,8 @@
 - [x] Implement `make_example(frequencies, noise_levels)` → (C, sigma, noisy_w, clean_w)
 - [ ] Verify C is one-hot over 4 frequencies
 - [ ] Verify sigma is drawn from NOISE_LEVELS list
-- [ ] Verify noisy_window shape is (10,)
-- [ ] Verify clean_window shape is (10,)
+- [ ] Verify noisy_window shape is (100,)
+- [ ] Verify clean_window shape is (100,)
 - [ ] Verify C dtype is float32
 - [ ] Verify noisy_window dtype is float32
 - [ ] Verify clean_window dtype is float32
@@ -110,19 +110,19 @@
 - [ ] Verify noisy_window == clean_window when sigma=0.0
 
 ### 1.6 FC Input Construction
-- [x] Build x_flat = [noisy_window(10) | C(4) | sigma(1)] → shape [15]
-- [ ] Verify x_flat[0:10] equals noisy_window
-- [ ] Verify x_flat[10:14] equals one-hot C
-- [ ] Verify x_flat[14] equals sigma
+- [x] Build x_flat = [noisy_window(100) | C(4) | sigma(1)] → shape [105]
+- [ ] Verify x_flat[0:100] equals noisy_window
+- [ ] Verify x_flat[100:104] equals one-hot C
+- [ ] Verify x_flat[104] equals sigma
 - [ ] Verify x_flat dtype is float32
-- [ ] Verify x_flat shape is (15,)
+- [ ] Verify x_flat shape is (105,)
 
 ### 1.7 RNN/LSTM Input Construction
-- [x] Build x_seq = [noisy_val | C1,C2,C3,C4 | sigma] per step → shape [10, 6]
-- [ ] Verify x_seq shape is (10, 6)
+- [x] Build x_seq = [noisy_val | C1,C2,C3,C4 | sigma] per step → shape [100, 6]
+- [ ] Verify x_seq shape is (100, 6)
 - [ ] Verify x_seq[:, 0] equals noisy_window
-- [ ] Verify x_seq[:, 1:5] equals C repeated 10 times
-- [ ] Verify x_seq[:, 5] equals sigma repeated 10 times
+- [ ] Verify x_seq[:, 1:5] equals C repeated 100 times
+- [ ] Verify x_seq[:, 5] equals sigma repeated 100 times
 - [ ] Verify x_seq dtype is float32
 
 ### 1.8 `SignalReconstructionDataset` Class
@@ -133,9 +133,9 @@
 - [ ] Test dataset of 100 samples → len(dataset) == 100
 - [ ] Test dataset of 1000 samples → len(dataset) == 1000
 - [ ] Test dataset of 10000 samples → len(dataset) == 10000
-- [ ] Verify x_flat.shape == (15,) for every item
-- [ ] Verify x_seq.shape == (10, 6) for every item
-- [ ] Verify y.shape == (10,) for every item
+- [ ] Verify x_flat.shape == (105,) for every item
+- [ ] Verify x_seq.shape == (100, 6) for every item
+- [ ] Verify y.shape == (100,) for every item
 - [ ] Verify x_flat.dtype == torch.float32
 - [ ] Verify x_seq.dtype == torch.float32
 - [ ] Verify y.dtype == torch.float32
@@ -151,9 +151,9 @@
 - [ ] Verify train size ≈ 70% of total
 - [ ] Verify val size ≈ 15% of total
 - [ ] Verify test size ≈ 15% of total
-- [ ] Verify batch x_flat shape == (batch_size, 15)
-- [ ] Verify batch x_seq shape == (batch_size, 10, 6)
-- [ ] Verify batch y shape == (batch_size, 10)
+- [ ] Verify batch x_flat shape == (batch_size, 105)
+- [ ] Verify batch x_seq shape == (batch_size, 100, 6)
+- [ ] Verify batch y shape == (batch_size, 100)
 - [ ] Test batch_size=16
 - [ ] Test batch_size=32
 - [ ] Test batch_size=64
@@ -167,26 +167,25 @@
 
 ### 2.1 Architecture
 - [x] Implement `FCNet` class (nn.Module)
-- [x] Input: [batch, 15]
-- [x] Output: [batch, 10]
-- [x] Layer 1: Linear(15, 64) → ReLU
-- [x] Layer 2: Linear(64, 64) → ReLU
-- [x] Layer 3: Linear(64, 10)
+- [x] Input: [batch, 105]
+- [x] Output: [batch, 100]
+- [x] Layer 1: Linear(105, 64) → ReLU
+- [x] Layer 2: Linear(64, 100)
 - [ ] Verify hidden_size=64 by default
 - [ ] Test instantiation with hidden_size=32
 - [ ] Test instantiation with hidden_size=128
-- [ ] Verify output shape (8, 10) with batch_size=8
-- [ ] Verify output shape (1, 10) with batch_size=1
-- [ ] Verify output shape (64, 10) with batch_size=64
+- [ ] Verify output shape (8, 100) with batch_size=8
+- [ ] Verify output shape (1, 100) with batch_size=1
+- [ ] Verify output shape (64, 100) with batch_size=64
 - [ ] Verify FC accepts x_seq=None
 - [ ] Verify FC uses x_flat only (ignores x_seq)
 - [ ] Verify output has no NaN values on random input
 - [ ] Verify output has no Inf values on random input
 
 ### 2.2 Forward Pass Sanity
-- [ ] FCNet forward: x_flat=[1,15] → output=[1,10] ✓
-- [ ] FCNet forward: x_flat=[32,15] → output=[32,10] ✓
-- [ ] FCNet forward: x_flat=[64,15] → output=[64,10] ✓
+- [ ] FCNet forward: x_flat=[1,105] → output=[1,100] ✓
+- [ ] FCNet forward: x_flat=[32,105] → output=[32,100] ✓
+- [ ] FCNet forward: x_flat=[64,105] → output=[64,100] ✓
 - [ ] FCNet forward on zeros input → no crash
 - [ ] FCNet forward on ones input → no crash
 - [ ] FCNet forward on large values → check for overflow
@@ -222,23 +221,24 @@
 
 ### 3.1 Architecture
 - [x] Implement `RNNNet` class (nn.Module)
-- [x] Input: [batch, 10, 6]
-- [x] Output: [batch, 10]
-- [x] nn.RNN(input_size=6, hidden_size=64, batch_first=True)
-- [x] Linear(64, 1) at every timestep → squeeze → [batch, 10]
+- [x] Input: [batch, 100, 6]
+- [x] Output: [batch, 100]
+- [x] nn.RNN(input_size=6, hidden_size=64, bidirectional=True, batch_first=True)
+- [x] LayerNorm(128) after BiRNN output
+- [x] Linear(128, 1) at every timestep → squeeze → [batch, 100]
 - [ ] Verify hidden_size=64 by default
 - [ ] Verify num_layers=1 by default
 - [ ] Test instantiation with hidden_size=32
 - [ ] Test instantiation with hidden_size=128
 - [ ] Test instantiation with num_layers=2
-- [ ] Verify output shape (8, 10) with batch_size=8
-- [ ] Verify output shape (1, 10) with batch_size=1
-- [ ] Verify output shape (64, 10) with batch_size=64
+- [ ] Verify output shape (8, 100) with batch_size=8
+- [ ] Verify output shape (1, 100) with batch_size=1
+- [ ] Verify output shape (64, 100) with batch_size=64
 
 ### 3.2 Forward Pass Sanity
-- [ ] RNNNet forward: x_seq=[1,10,6] → output=[1,10] ✓
-- [ ] RNNNet forward: x_seq=[32,10,6] → output=[32,10] ✓
-- [ ] RNNNet forward: x_seq=[64,10,6] → output=[64,10] ✓
+- [ ] RNNNet forward: x_seq=[1,100,6] → output=[1,100] ✓
+- [ ] RNNNet forward: x_seq=[32,100,6] → output=[32,100] ✓
+- [ ] RNNNet forward: x_seq=[64,100,6] → output=[64,100] ✓
 - [ ] RNNNet forward on zeros input → no crash
 - [ ] RNNNet output has no NaN values
 - [ ] RNNNet output has no Inf values
@@ -276,10 +276,11 @@
 
 ### 4.1 Architecture
 - [x] Implement `LSTMNet` class (nn.Module)
-- [x] Input: [batch, 10, 6]
-- [x] Output: [batch, 10]
-- [x] nn.LSTM(input_size=6, hidden_size=64, batch_first=True)
-- [x] Linear(64, 1) at every timestep → squeeze → [batch, 10]
+- [x] Input: [batch, 100, 6]
+- [x] Output: [batch, 100]
+- [x] nn.LSTM(input_size=6, hidden_size=64, bidirectional=True, batch_first=True)
+- [x] LayerNorm(128) after BiLSTM output
+- [x] Linear(128, 1) at every timestep → squeeze → [batch, 100]
 - [ ] Verify hidden_size=64 by default
 - [ ] Verify num_layers=1 by default
 - [ ] Test instantiation with hidden_size=32
@@ -289,14 +290,14 @@
 - [ ] Verify LSTM has input gate
 - [ ] Verify LSTM has output gate
 - [ ] Verify LSTM has cell state (c_0)
-- [ ] Verify output shape (8, 10) with batch_size=8
-- [ ] Verify output shape (1, 10) with batch_size=1
-- [ ] Verify output shape (64, 10) with batch_size=64
+- [ ] Verify output shape (8, 100) with batch_size=8
+- [ ] Verify output shape (1, 100) with batch_size=1
+- [ ] Verify output shape (64, 100) with batch_size=64
 
 ### 4.2 Forward Pass Sanity
-- [ ] LSTMNet forward: x_seq=[1,10,6] → output=[1,10] ✓
-- [ ] LSTMNet forward: x_seq=[32,10,6] → output=[32,10] ✓
-- [ ] LSTMNet forward: x_seq=[64,10,6] → output=[64,10] ✓
+- [ ] LSTMNet forward: x_seq=[1,100,6] → output=[1,100] ✓
+- [ ] LSTMNet forward: x_seq=[32,100,6] → output=[32,100] ✓
+- [ ] LSTMNet forward: x_seq=[64,100,6] → output=[64,100] ✓
 - [ ] LSTMNet forward on zeros → no crash
 - [ ] LSTMNet output has no NaN values
 - [ ] LSTMNet output has no Inf values

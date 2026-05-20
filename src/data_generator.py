@@ -1,7 +1,10 @@
-"""Synthetic sinusoidal dataset for signal reconstruction/separation.
+"""Synthetic sinusoidal dataset for signal separation from a noisy mixture.
 
 Each item returns x_flat [105], x_seq [100, 6], target y [100], and sigma [1].
-The target is the clean selected sine component; the input is its noisy window.
+The INPUT is the noisy *mixed* signal (sum of all 4 components, each with
+per-component Gaussian noise).  The TARGET is the clean version of the
+selected component.  The one-hot selector C tells the model which component
+to extract — identical in spirit to how a prompt steers a language model.
 """
 
 from __future__ import annotations
@@ -46,22 +49,36 @@ def make_example(
     frequencies: list = FREQUENCIES,
     noise_levels: list = NOISE_LEVELS,
 ) -> tuple[np.ndarray, float, np.ndarray, np.ndarray]:
-    """Generate one example: C, sigma, noisy selected window, clean target."""
+    """Generate one training example for component separation.
+
+    All four sinusoidal components are generated with independent random
+    amplitudes and phases.  Gaussian noise is added to each component
+    individually before they are summed into a single mixed signal.
+    The network receives the mixed noisy window and must recover the
+    clean version of the component indicated by the one-hot selector C.
+    """
     c_idx = int(np.random.randint(0, len(frequencies)))
     C = one_hot(c_idx)
     sigma = float(np.random.choice(noise_levels))
     start = int(np.random.randint(0, N_TOTAL - CONTEXT_WINDOW))
 
-    A = float(np.random.uniform(0.7, 1.3))
-    phi = float(np.random.uniform(0.0, 2.0 * np.pi))
-    clean = generate_clean_signal(frequencies[c_idx], A, phi)
-    noisy = add_gaussian_noise(clean, A, sigma)
+    mixed_noisy = np.zeros(N_TOTAL, dtype=np.float32)
+    clean_target: np.ndarray | None = None
+
+    for i, freq in enumerate(frequencies):
+        A_i = float(np.random.uniform(0.7, 1.3))
+        phi_i = float(np.random.uniform(0.0, 2.0 * np.pi))
+        clean_i = generate_clean_signal(freq, A_i, phi_i)
+        noisy_i = add_gaussian_noise(clean_i, A_i, sigma)
+        mixed_noisy += noisy_i
+        if i == c_idx:
+            clean_target = clean_i
 
     return (
         C,
         sigma,
-        noisy[start : start + CONTEXT_WINDOW],
-        clean[start : start + CONTEXT_WINDOW],
+        mixed_noisy[start : start + CONTEXT_WINDOW],
+        clean_target[start : start + CONTEXT_WINDOW],
     )
 
 

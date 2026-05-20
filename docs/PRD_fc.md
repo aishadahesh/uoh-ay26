@@ -1,33 +1,80 @@
 # PRD — Fully Connected Network (FC)
 
+## Role
+
+FC is the **baseline model**. It processes the entire mixed-signal window at once as a flat
+vector, using the explicit frequency selector `C` and noise hint `σ` to decide which component
+to reconstruct.
+
+Because FC has access to all 100 samples simultaneously, it can learn **one matched filter
+per (frequency, noise level) combination** — a nearly-linear regression that is very
+efficient for stationary sinusoidal components.
+
+---
+
 ## Architecture
 
 ```
-Input: (batch, SEQ_LEN, 1)
-  └─ Flatten → (batch, SEQ_LEN)
-     └─ Linear(SEQ_LEN → 256) + ReLU + Dropout(0.3)
-        └─ Linear(256 → 128) + ReLU + Dropout(0.3)
-           └─ Linear(128 → 64) + ReLU + Dropout(0.3)
-              └─ Linear(64 → 4)   ← logits
+x_flat: (batch, 105)
+   └─ Linear(105 → 64) + ReLU
+         └─ Linear(64 → 100)
+
+Output: y_hat (batch, 100)   ← predicted clean component window
 ```
+
+The 105-dimensional input is:
+```
+x_flat = [ mixed_window(100) | one_hot_C(4) | sigma(1) ]
+```
+
+---
 
 ## Hyperparameters
 
-| Parameter    | Value      | Reason |
-|--------------|------------|--------|
-| Hidden sizes | [256,128,64] | Enough capacity to learn frequency patterns |
-| Dropout      | 0.3        | Regularization against overfitting |
-| Optimizer    | Adam       | lr=1e-3, weight_decay=1e-4 |
-| Loss         | CrossEntropy | Multi-class classification |
-| Epochs       | 40         | With early-stopping via ReduceLROnPlateau |
+| Parameter | Value | Reason |
+|-----------|-------|--------|
+| Hidden size | 64 | Balanced capacity; same for all models |
+| Optimizer | Adam | lr=1e-3, weight\_decay=1e-4 |
+| Loss | MSELoss | Reconstruction task (not classification) |
+| Scheduler | ReduceLROnPlateau | patience=5, factor=0.5 |
+| Early stop patience | 15 epochs | |
+| Gradient clip | 1.0 | Stability |
 
-## Expected Behavior
-
-- FC has **no temporal awareness**; it treats the entire window as a bag of features.
-- It works well at **high SNR** because the frequency pattern is learnable from the magnitude spectrum encoded implicitly in the weights.
-- At high noise it degrades more than LSTM because it cannot leverage sequential structure.
-- It is the **baseline** for comparison.
+---
 
 ## Parameter Count
 
-With SEQ_LEN=200: `200×256 + 256×128 + 128×64 + 64×4 ≈ 85 000 parameters`
+```
+Linear(105 → 64):  105 × 64 + 64 = 6,784
+Linear(64 → 100):  64 × 100 + 100 = 6,500
+Total:             ≈ 13,284 parameters
+```
+
+---
+
+## Expected Behavior
+
+- **High-frequency components (7 Hz):** FC wins decisively (test MSE 0.186).
+  70% of the oscillation period is visible in 100 samples; the amplitude/phase pattern
+  is unambiguous as a flat feature vector.
+- **Low-frequency components (1 Hz):** FC is slightly weaker (test MSE 0.298) because
+  the 100-sample window covers only 10% of one period — the waveform looks nearly
+  linear, making phase estimation harder.
+- **Overall test MSE:** 0.2942 (best of the three models at this training scale).
+
+---
+
+## Why FC Beats Sequential Models Here
+
+1. **Full context at once.** FC processes all 100 mixed samples simultaneously; there is
+   no sequential error compounding.
+2. **Explicit conditioning.** `C` and `σ` are concatenated directly, telling the network
+   exactly which component to extract. FC only needs to learn the denoising filter, not
+   the frequency selector.
+3. **Efficient matched filter.** For stationary sinusoids, the optimal filter is a
+   linear operation (inner product with the target sinusoid shape). FC can approximate
+   this with a single hidden layer of 64 units.
+
+At larger window sizes (≥ 500 samples), sequential models would begin to win because the
+long context would reward temporal memory.
+

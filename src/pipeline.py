@@ -21,11 +21,11 @@ def build_models(selected: str) -> dict[str, torch.nn.Module]:
     """Build selected model registry."""
     registry = {}
     if selected in ("all", "fc"):
-        registry["FC"] = FCNet(hidden_size=16)
+        registry["FC"] = FCNet(hidden_size=64)
     if selected in ("all", "rnn"):
-        registry["RNN"] = RNNNet(hidden_size=64, num_layers=2)
+        registry["RNN"] = RNNNet(hidden_size=64, num_layers=1)
     if selected in ("all", "lstm"):
-        registry["LSTM"] = LSTMNet(hidden_size=128, num_layers=2)
+        registry["LSTM"] = LSTMNet(hidden_size=64, num_layers=1)
     return registry
 
 
@@ -66,9 +66,9 @@ def run_noise_sweep(args, device) -> list[dict]:
         return []
     print("\n[5/7] Noise sweep ...")
     configs = [
-        {"name": "FC", "class": FCNet, "kwargs": {"hidden_size": 16}},
-        {"name": "RNN", "class": RNNNet, "kwargs": {"hidden_size": 64, "num_layers": 2}},
-        {"name": "LSTM", "class": LSTMNet, "kwargs": {"hidden_size": 128, "num_layers": 2}},
+        {"name": "FC",   "class": FCNet,   "kwargs": {"hidden_size": 64}},
+        {"name": "RNN",  "class": RNNNet,  "kwargs": {"hidden_size": 64, "num_layers": 1}},
+        {"name": "LSTM", "class": LSTMNet, "kwargs": {"hidden_size": 64, "num_layers": 1}},
     ]
     return noise_sweep(
         configs, NOISE_LEVELS, get_dataloaders, device,

@@ -8,12 +8,12 @@
 
 ## 1. Problem Statement
 
-Given a **10-sample noisy window** of a sinusoidal signal, together with a **one-hot frequency selector C** and the **noise level sigma**, reconstruct the corresponding **10-sample clean window**.
+Given a **100-sample noisy window** of a sinusoidal signal, together with a **one-hot frequency selector C** and the **noise level sigma**, reconstruct the corresponding **100-sample clean window**.
 
 This is a **regression / denoising** task evaluated with **MSE loss**.
 
 The comparison between FC, RNN, and LSTM demonstrates the difference between:
-- **FC (Fully Connected)** — no temporal awareness; treats the 10 values as flat features.
+- **FC (Fully Connected)** — no temporal awareness; treats the 100 values as flat features.
 - **RNN (Recurrent Neural Network)** — sequential processing; hidden state h_t propagates context.
 - **LSTM (Long Short-Term Memory)** — gated memory; better at preserving signal structure.
 
@@ -31,34 +31,34 @@ noisy(t) = clean(t) + η(t),   η ~ N(0, (sigma · A)²)
 | A         | Uniform(0.7, 1.3) |
 | f         | {1, 2, 5, 7} Hz |
 | φ (phase) | Uniform(0, 2π) |
-| sigma     | {0.00, 0.01, 0.05, 0.10, 0.20} |
+| sigma     | {0.00, 0.10, 0.30, 0.50, 1.00} |
 | Fs        | 1000 Hz |
 | Duration  | 10 s → 10 000 samples per full signal |
-| Window    | 10 consecutive samples |
+| Window    | 100 consecutive samples (100 ms) |
 
 ---
 
 ## 3. Input / Output Specification
 
 ### 3.1 Dataset Item
-| Component     | Shape  | Description |
-|---------------|--------|-------------|
-| C             | (4,)   | One-hot frequency selector |
-| sigma         | scalar | Noise level (fraction of A) |
-| noisy_window  | (10,)  | Noisy input window |
-| clean_window  | (10,)  | **Target** — clean window |
+| Component     | Shape   | Description |
+|---------------|---------|-------------|
+| C             | (4,)    | One-hot frequency selector |
+| sigma         | scalar  | Noise level (fraction of A) |
+| noisy_window  | (100,)  | Noisy input window |
+| clean_window  | (100,)  | **Target** — clean window |
 
 ### 3.2 FC Model
 | | Shape |
 |---|---|
-| Input `x_flat` | (batch, 15) = `[noisy(10) | C(4) | sigma(1)]` |
-| Output         | (batch, 10) |
+| Input `x_flat` | (batch, 105) = `[noisy(100) \| C(4) \| sigma(1)]` |
+| Output         | (batch, 100) |
 
 ### 3.3 RNN / LSTM Model
 | | Shape |
 |---|---|
-| Input `x_seq`  | (batch, 10, 6) — at each step: `[noisy_val, C1, C2, C3, C4, sigma]` |
-| Output         | (batch, 10) |
+| Input `x_seq`  | (batch, 100, 6) — at each step: `[noisy_val, C1, C2, C3, C4, sigma]` |
+| Output         | (batch, 100) |
 
 ### 3.4 Loss
 ```
@@ -82,17 +82,17 @@ loss = MSE(prediction, clean_window) = mean((ŷ - y)²)
 
 ### FC baseline
 ```
-Linear(15, 64) → ReLU → Linear(64, 64) → ReLU → Linear(64, 10)
+Linear(105, 16) → ReLU → Linear(16, 100)   (~3,400 params)
 ```
 
-### Simple RNN
+### Bidirectional RNN (2-layer)
 ```
-RNN(input=6, hidden=64, batch_first=True) → Linear(64, 1) at every step → squeeze
+BiRNN(input=6, hidden=64, layers=2) → LayerNorm(128) → Linear(128, 1) at every step  (~34,400 params)
 ```
 
-### LSTM
+### Bidirectional LSTM (2-layer)
 ```
-LSTM(input=6, hidden=64, batch_first=True) → Linear(64, 1) at every step → squeeze
+BiLSTM(input=6, hidden=128, layers=2) → LayerNorm(256) → Linear(256, 1) at every step  (~535,000 params)
 ```
 
 ---

@@ -1,34 +1,34 @@
 # PLAN — Implementation Plan
 
 ## Objective
-Signal **reconstruction** (denoising): given a 10-sample noisy window + condition (C, sigma),
-predict the 10-sample clean window. Loss = **MSE**.
+Signal **reconstruction** (denoising): given a 100-sample noisy window + condition (C, sigma),
+predict the 100-sample clean window. Loss = **MSE**.
 
 ## Data Flow
 ```
 make_example()
   → (C, sigma, noisy_window, clean_window)
-  → x_flat [15]  for FC
-  → x_seq  [10,6] for RNN/LSTM
-  → y      [10]   target
+  → x_flat [105]   for FC          ([window(100) | C(4) | sigma(1)])
+  → x_seq  [100,6] for RNN/LSTM    (per step: [val, C1,C2,C3,C4,sigma])
+  → y      [100]   target
 ```
 
 ## Phases
 
 ### Phase 1 — Dataset (`src/data_generator.py`)
-- [x] Constants: FREQUENCIES=[1,2,5,7], SAMPLE_RATE=1000, DURATION=10, CONTEXT_WINDOW=10
+- [x] Constants: FREQUENCIES=[1,2,5,7], SAMPLE_RATE=1000, DURATION=10, CONTEXT_WINDOW=100
 - [x] `one_hot(idx, n)` → float32 array
 - [x] `generate_clean_signal(freq, A, phi)` → shape (10000,)
 - [x] `add_gaussian_noise(clean, A, sigma)` → noisy copy
-- [x] `make_example()` → (C, sigma, noisy_window[10], clean_window[10])
-- [x] `SignalReconstructionDataset`: x_flat[15], x_seq[10,6], y[10]
+- [x] `make_example()` → (C, sigma, noisy_window[100], clean_window[100])
+- [x] `SignalReconstructionDataset`: x_flat[105], x_seq[100,6], y[100]
 - [x] `get_dataloaders()` → 70/15/15 train/val/test split
 
 ### Phase 2 — Models (`src/models.py`)
-- [x] `FCNet`: Linear(15,64)→ReLU→Linear(64,64)→ReLU→Linear(64,10)
-- [x] `RNNNet`: RNN(6,64)→Linear(64,1)@each_step→squeeze → [batch,10]
-- [x] `LSTMNet`: LSTM(6,64)→Linear(64,1)@each_step→squeeze → [batch,10]
-- [x] All models share signature: `forward(x_flat, x_seq)` → [batch,10]
+- [x] `FCNet`: Linear(105,16)→ReLU→Linear(16,100)  (~3,400 params)
+- [x] `RNNNet`: BiRNN(input=6, hidden=64, layers=2)→LayerNorm(128)→Linear(128,1)@each_step  (~34,400 params)
+- [x] `LSTMNet`: BiLSTM(input=6, hidden=128, layers=2)→LayerNorm(256)→Linear(256,1)@each_step  (~535,000 params)
+- [x] All models share signature: `forward(x_flat, x_seq)` → [batch,100]
 
 ### Phase 3 — Training (`src/train.py`)
 - [x] MSELoss criterion
@@ -48,7 +48,7 @@ make_example()
 
 ### Phase 5 — Plots (`src/plots.py`)
 - [x] `plot_signals()` → signals.png (clean vs noisy, all 4 freqs)
-- [x] `plot_window_example()` → window_example.png (10-sample window)
+- [x] `plot_window_example()` → window_example.png (100-sample window)
 - [x] `plot_training_loss()` → training_loss.png (MSE curves)
 - [x] `plot_prediction_vs_true()` → prediction_vs_true.png
 - [x] `plot_mse_per_frequency()` → mse_per_frequency.png
@@ -71,9 +71,9 @@ make_example()
 
 ## Key Design Decisions
 
-1. **CONTEXT_WINDOW = 10** — per assignment spec: 10 samples per training example.
-2. **FC input [batch,15]** — flat: noisy(10) + one-hot C(4) + sigma(1).
-3. **RNN/LSTM input [batch,10,6]** — at each step: noisy_val + C1,C2,C3,C4 + sigma.
+1. **CONTEXT_WINDOW = 100** — 100 samples @ 1000 Hz = 100 ms. Enough for 7 Hz to show ~70% of a period while keeping 1 Hz challenging (only 10% of a period).
+2. **FC input [batch,105]** — flat: noisy(100) + one-hot C(4) + sigma(1).
+3. **RNN/LSTM input [batch,100,6]** — at each step: noisy_val + C1,C2,C3,C4 + sigma.
 4. **MSELoss** — required by the assignment for regression/denoising.
 5. **Gaussian noise** — physically motivated (measurement error), easiest to tune via sigma.
 6. **Amplitude A ∈ Uniform(0.7, 1.3)** — prevents models from memorizing a fixed amplitude.

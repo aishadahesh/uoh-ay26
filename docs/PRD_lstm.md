@@ -1,14 +1,35 @@
 # PRD — LSTM (Long Short-Term Memory)
 
+## Role
+
+LSTM is the **primary sequential model**. It adds explicit gating on top of RNN to selectively
+suppress the three non-selected components that appear in the mixed-signal input. The forget
+gate can zero out accumulated influence from unwanted frequencies; the input gate can
+amplify the target component’s contribution.
+
+---
+
 ## Architecture
 
 ```
-Input: (batch, SEQ_LEN, 1)
-  └─ LSTM(input=1, hidden=64, layers=2)
-     └─ Take last hidden state h_T: (batch, 64)
-        └─ Dropout(0.3)
-           └─ Linear(64 → 4)  ← logits
+x_seq: (batch, 100, 6)
+   └─ Bidirectional LSTM(input=6, hidden=64, num_layers=1)
+         output: (batch, 100, 128)      ← 128 = 64 forward + 64 backward
+         └─ LayerNorm(128)              ← stabilises activations across time
+               └─ Linear(128 → 1)       ← applied at EVERY time step
+
+Output: y_hat (batch, 100)   ← predicted clean component window
 ```
+
+The 6-dimensional per-step input is:
+```
+x_seq[t] = [ mixed_val_t, C1, C2, C3, C4, σ ]
+```
+(C and σ are repeated identically at every step.)
+
+Weights are initialised with **orthogonal initialisation** for all recurrent matrices.
+
+---
 
 ## LSTM Cell Equations
 
@@ -16,38 +37,55 @@ Input: (batch, SEQ_LEN, 1)
 Forget gate:  f_t = σ(W_f · [h_{t-1}, x_t] + b_f)   — what to erase from cell state
 Input gate:   i_t = σ(W_i · [h_{t-1}, x_t] + b_i)   — what new info to write
 Cell update:  C̃_t = tanh(W_C · [h_{t-1}, x_t] + b_C)
-Cell state:   C_t = f_t ⊙ C_{t-1} + i_t ⊙ C̃_t      — long-term memory
+Cell state:   C_t = f_t ⊙ C_{t-1} + i_t ⊙ C̃_t        — long-term memory
 Output gate:  o_t = σ(W_o · [h_{t-1}, x_t] + b_o)
 Hidden state: h_t = o_t ⊙ tanh(C_t)                  — short-term output
 ```
 
-## Why LSTM Fixes RNN's Problem
+When `f_t ≈ 1` the cell state is passed unchanged, creating a **direct gradient path**
+across 100 steps with no vanishing. This is the fundamental advantage over vanilla RNN.
 
-The **cell state** `C_t` acts as a "conveyor belt" that can carry information across hundreds of time steps with minimal gradient attenuation. The forget gate can keep `f_t ≈ 1`, meaning `C_t ≈ C_{t-1}` — a direct gradient path backward in time with no vanishing.
-
-This allows LSTM to:
-- Detect **low-frequency** signals (1 Hz) by remembering the signal trend over 1000 samples.
-- Continue to detect **high-frequency** signals (7 Hz) via normal sequential processing.
+---
 
 ## Hyperparameters
 
-| Parameter   | Value | Reason |
-|-------------|-------|--------|
-| Hidden size | 64    | Same as RNN for fair comparison |
-| Num layers  | 2     | Stacked LSTM |
-| Dropout     | 0.3   | Between stacked layers |
+| Parameter | Value | Reason |
+|-----------|-------|--------|
+| Hidden size | 64 | Balanced capacity; same for all models |
+| Num layers | 1 | 4× gate overhead already provides sufficient capacity |
+| Bidirectional | True | Forward + backward context; output dim = 128 |
+| LayerNorm | after BiLSTM output | Stabilises 128-dim concatenated state |
+| Optimizer | Adam | lr=1e-3, weight\_decay=1e-4 |
+| Loss | MSELoss | Reconstruction task |
 | Gradient clip | 1.0 | Stability |
 
-## Expected Behavior
-
-| Frequency | Expected LSTM performance |
-|-----------|-------------------------|
-| S7 (7 Hz) | High accuracy (≥ 97%)   |
-| S5 (5 Hz) | High accuracy (≥ 97%)   |
-| S2 (2 Hz) | High accuracy (≥ 95%)   |
-| S1 (1 Hz) | High accuracy (≥ 90%)   |
+---
 
 ## Parameter Count
 
-LSTM has 4× the parameters of RNN (4 gates):
-`4 × (1+64)×64 × 2_layers ≈ 66 560 parameters`
+```
+Forward LSTM:  4 × [(6+64)×64 + 64] = 4 × 4,544 + 4 × 64 = 18,432
+Backward LSTM: same                                          = 18,432
+LayerNorm:     128 × 2                                       = 256
+Linear(128→1): 128 + 1                                      = 129
+Total:         ≈ 37,249 parameters
+```
+
+LSTM has ~4× more parameters than RNN at the same hidden size (four gates vs. one state update).
+
+---
+
+## Expected Behavior
+
+| Frequency | LSTM test MSE | Notes |
+|-----------|-------------|-------|
+| 1 Hz | **0.277** | Best model for 1 Hz — gated memory tracks gentle slope |
+| 2 Hz | 0.347 | Comparable to FC |
+| 5 Hz | 0.370 | LSTM’s cell state helps isolate target component |
+| 7 Hz | 0.263 | Clear oscillation; gating suppresses other components |
+
+**Overall test MSE: 0.3131** (between FC and RNN).  
+LSTM outperforms RNN by **13%** (0.313 vs 0.361), confirming that the gating advantage
+is meaningful even at this small scale. LSTM trails FC because FC’s direct flat-vector
+access is more efficient for separating stationary sinusoids at 100-sample windows.
+
