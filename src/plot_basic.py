@@ -14,7 +14,7 @@ from .plot_style import FREQ_LABELS, FREQUENCIES, MODEL_COLORS, PLOTS_DIR, SAMPL
 
 def plot_signals(noise_level: float = 0.10, save: bool = True) -> plt.Figure:
     """Plot clean + noisy full signals for all four frequencies."""
-    from data_generator import N_TOTAL, add_gaussian_noise, generate_clean_signal
+    from .data_generator import N_TOTAL, add_gaussian_noise, generate_clean_signal
 
     fig, axes = plt.subplots(4, 2, figsize=(14, 12))
     fig.suptitle(f"Clean vs Noisy Sinusoids (sigma={noise_level:.0%})", fontsize=13)
@@ -45,7 +45,7 @@ def plot_signals(noise_level: float = 0.10, save: bool = True) -> plt.Figure:
 
 def plot_window_example(save: bool = True) -> plt.Figure:
     """Show one noisy window alongside the clean target."""
-    from data_generator import make_example
+    from .data_generator import make_example
 
     np.random.seed(7)
     C, sigma, noisy_w, clean_w = make_example()
