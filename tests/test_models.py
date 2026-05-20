@@ -9,7 +9,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from models import CONTEXT_WINDOW, FC_INPUT_SIZE, SEQ_FEATURES, FCNet, LSTMNet, RNNNet
+from src.models import CONTEXT_WINDOW, FC_INPUT_SIZE, SEQ_FEATURES, FCNet, LSTMNet, RNNNet
 
 BATCH = 8
 

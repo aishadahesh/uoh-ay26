@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import numpy as np
 
-from data_generator import (
+from src.data_generator import (
     CONTEXT_WINDOW,
     FREQUENCIES,
     N_FREQS,

@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import torch
 
-from data_generator import (
+from src.data_generator import (
     CONTEXT_WINDOW,
     FC_INPUT_SIZE,
     N_FREQS,
