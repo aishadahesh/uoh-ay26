@@ -1,42 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # Signal Reconstruction &mdash; FC vs RNN vs LSTM
 
 <div align="center">
@@ -371,7 +332,10 @@ Adam combines momentum and adaptive per-parameter learning rates, making it robu
 
 ### Weight Decay: `1e-4`
 
-A small L2 penalty discourages very large weights without significantly slowing convergence. With only 10,000 training examples and the 2-layer LSTM having ~535K parameters, unconstrained weights could overfit. `1e-4` is a conservative choice that regularises without distorting the loss landscape — this also helps explain why the much smaller RNN (~34K params) generalises better on this dataset.
+A small L2 penalty discourages very large weights without significantly slowing convergence.
+With only 10,000 training examples and models ranging from ~9,600 (RNN) to ~37,200 (LSTM)
+parameters, unconstrained weights could overfit on later epochs. `1e-4` is a conservative
+choice that regularises without distorting the loss landscape.
 
 ### Scheduler: ReduceLROnPlateau (`patience=5`, `factor=0.5`)
 
@@ -599,7 +563,12 @@ uoh-ay26/
 |   +-- models.py             <- FCNet, RNNNet, LSTMNet
 |   +-- train.py              <- training loop (MSELoss, Adam, scheduler, early stopping)
 |   +-- evaluate.py           <- MSE/MAE/Corr metrics
-|   +-- plots.py              <- all visualisations
+|   +-- evaluate_sweep.py     <- per-sigma sweep evaluation
+|   +-- pipeline.py           <- orchestration helpers called by main.py
+|   +-- plots.py              <- plot dispatcher (delegates to plot_basic / plot_comparison)
+|   +-- plot_basic.py         <- individual signal / window / training-loss plots
+|   +-- plot_comparison.py    <- per-frequency and noise-sweep comparison plots
+|   +-- plot_style.py         <- shared colours, labels, directory constant
 |   +-- main.py               <- CLI entry point
 |
 +-- tests/
