@@ -20,4 +20,23 @@ dev = ["pytest>=8", "pytest-cov"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts  = "--cov=src --cov-report=term-missing --cov-fail-under=85"
+
+[tool.ruff]
+line-length    = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]   # line-length is advisory; formatter handles it
+
+[tool.coverage.run]
+source = ["src"]
+omit   = [
+    "src/__pycache__/*",
+    "src/main.py",
+    "src/config.py",
+    "src/plot_basic.py",
+    "src/plot_comparison.py",
+]
 
