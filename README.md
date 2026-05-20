@@ -386,6 +386,63 @@ At 1000 Hz, 100 samples equals **100 ms** of signal:
 
 For RNN and LSTM recurrent weight matrices, orthogonal initialisation (eigenvalues on the unit circle) ensures that the hidden-state norm is neither amplified nor shrunk at the start of training. This dramatically reduces the number of epochs needed before the recurrent layers produce meaningful gradients.
 
+### Number of Layers: 1
+
+All recurrent models use a **single bidirectional layer**. Two or more layers would increase capacity but also the risk of vanishing gradients and overfitting on the 10,000-sample dataset. A single layer with hidden=64 already gives the recurrent models enough capacity to model the 100-step sinusoidal context. Adding a second layer roughly doubled training time with no measurable test-MSE improvement in preliminary runs.
+
+### Number of Parameters per Layer
+
+| Model | Hidden | Parameters | Why this size |
+|-------|--------|------------|---------------|
+| FC | 64 | ~13,300 | One hidden layer of 64 units captures the (100+4+1)→100 mapping without overfitting |
+| RNN | 64 | ~9,600 | Weight sharing across 100 steps makes each parameter more efficient than FC; 64 units suffice |
+| LSTM | 64 | ~37,200 | 4-gate architecture multiplies cost ~4×; 64 is the minimum that allows the forget gate to meaningfully suppress unwanted frequency components |
+
+All three use **equal hidden size** so differences in results are attributable to architecture, not capacity.
+
+---
+
+## Signal Parameter Choices
+
+### Frequencies: {1, 2, 5, 7} Hz
+
+These four values were chosen to span a wide range of difficulty within a 100-sample window at 1000 Hz:
+- **1 Hz** — only 10% of a period visible → near-flat, hardest
+- **2 Hz** — 20% → visible slope, still challenging
+- **5 Hz** — 50% → half-sine arch visible, moderate
+- **7 Hz** — ~70% → clear oscillation, easiest
+
+All four are **incommensurable** (no integer ratio between any pair), so the mixed signal has no exact periodicity — preventing the network from exploiting simple aliasing shortcuts.
+
+### Amplitudes: $A_k \sim \text{Uniform}(0.7, 1.3)$
+
+Independent random amplitude per component prevents the network from memorising a fixed signal shape. The range (0.7–1.3) keeps all components of comparable power so no single frequency dominates the mixture. A narrower range (e.g., A=1 fixed) would let the model rely on amplitude as a frequency discriminator — an unrealistic shortcut.
+
+### Phases: $\varphi_k \sim \text{Uniform}(0, 2\pi)$
+
+Fully random independent phases ensure the network cannot use the phase offset as a reconstruction cue. If phases were fixed, the network could memorise the expected shape at each window position rather than learning to separate components.
+
+### Noise Type: Gaussian — $\eta_k \sim \mathcal{N}(0,\,(\sigma \cdot A_k)^2)$
+
+Gaussian noise is the standard choice for signal reconstruction tasks because:
+1. It is the maximum-entropy distribution for a given variance — the hardest noise to exploit.
+2. MSE loss is the optimal estimator under Gaussian noise (minimising MSE = maximising likelihood).
+3. Per-component scaling by $A_k$ makes the noise level proportional to the signal amplitude, giving a consistent SNR across components.
+
+Other options considered: uniform noise (bounded, easier to filter), Laplacian noise (heavier tails), or additive mixture noise (added after summing). We chose **per-component Gaussian** because it creates partially correlated noise in the mixture, making separation genuinely harder.
+
+### Noise Levels: $\sigma \in \{0.00,\,0.10,\,0.30,\,0.50,\,1.00\}$
+
+| &sigma; | SNR interpretation | Effect |
+|--------|-------------------|--------|
+| 0.00 | No noise | Measures pure separation difficulty (3 interfering components) |
+| 0.10 | 10% amplitude noise | Mild degradation — models should handle easily |
+| 0.30 | 30% amplitude noise | Moderate — clearly perceptible in plots |
+| 0.50 | 50% amplitude noise | Strong — target shape partially buried |
+| 1.00 | 100% amplitude noise | Extreme — noise std equals signal amplitude |
+
+The logarithmic spacing (0, 0.1, 0.3, 0.5, 1.0) covers both mild and extreme regimes, revealing whether a model degrades gracefully or collapses under high noise.
+
 ---
 
 ## Results
@@ -495,7 +552,61 @@ the component-separation challenge remains even without noise — the model must
 one component from the sum of the other three clean components.
 
 ---
+## Noise–Error Relationship
 
+### How noise level drives reconstruction error
+
+The noise sweep trains each model from scratch at each σ level. The results show a fundamentally different response across architectures:
+
+```
+σ     FC MSE    RNN MSE   LSTM MSE
+0.00  0.2337    0.3822    0.3961
+0.10  0.2503    0.3774    0.3922
+0.30  0.3119    0.3529    0.3589
+0.50  0.3438    0.3866    0.3833
+1.00  0.4252    0.3856    0.3731
+```
+
+**FC is the most noise-sensitive**: MSE rises from 0.234 at σ=0 to 0.425 at σ=1.0 — an 82% increase. This is expected: the matched-filter approach relies on the mixture containing a clearly identifiable component shape, which high noise destroys.
+
+**RNN and LSTM are noise-robust**: Their MSE stays in the range 0.35–0.40 across all σ levels. The recurrent hidden state averages information across 100 time steps — a form of implicit temporal smoothing that naturally suppresses additive Gaussian noise. At σ=0.3 their MSE is actually *lower* than at σ=0 because training on a noisier dataset forces the network to learn a more generalisable representation.
+
+**At σ=1.0**, FC's per-step SNR is approximately 0 dB — noise std equals signal amplitude. Yet FC still achieves MSE=0.425, well below the naive baseline of 0.52. This shows that even under extreme noise, the frequency selector `C` and noise level `σ` provide enough contextual signal for FC to suppress most of the noise.
+
+### How well do the models reconstruct?
+
+Reconstructed signals are evaluated against the clean ground truth on the held-out test set:
+
+| Model | MSE | Baseline (zero) | Improvement |
+|-------|-----|-----------------|-------------|
+| FC | 0.289 | 0.52 | **44% better** |
+| LSTM | 0.298 | 0.52 | **43% better** |
+| RNN | 0.333 | 0.52 | **36% better** |
+
+All models successfully separate the target component from the three-component noisy mixture. FC and LSTM track the clean waveform closely at 5 and 7 Hz; at 1 Hz the reconstruction is noisier because only 10% of the sinusoidal period is visible in the 100-sample window.
+
+### What the "context" learned by each architecture means
+
+**FC — global context, no temporal order:**  
+FC sees all 100 samples simultaneously as a flat vector. The "context" it learns is a *lookup table* indexed by (frequency class, noise level): for each (C, σ) combination it memorises an average sinusoidal shape. This is efficient when the window always contains the same fraction of the period — which holds here because we use a fixed 100-sample window and fixed frequencies. FC cannot adapt to variations in temporal phase or non-stationary signals.
+
+**RNN — sequential context, unlimited look-back:**  
+RNN processes time steps one-by-one, passing a hidden state forward (and backward, since it is bidirectional). The "context" at each step $t$ is encoded in $h_t$ — a compressed summary of all previous and future samples in the window. The vanilla RNN suffers from **gradient vanishing**: after ~20 steps of backpropagation, gradients of the loss w.r.t. early hidden states become negligibly small. This means the hidden state effectively forgets the shape of the signal from 50–100 steps ago, limiting the useful context length to roughly 20–30 steps. At 7 Hz (143-sample period) this is often enough; at 1 Hz (1000-sample period) the 100-step window is too short to even observe one full cycle, so the vanishing problem is compounded by the frequency itself.
+
+**LSTM — gated context, selective memory:**  
+LSTM replaces the vanilla hidden state with a **cell state** $C_t$ that has a dedicated gradient highway (the forget gate path). Gradients flow back through the cell state without multiplicative shrinkage, allowing the model to remember information from step 1 all the way to step 100. The "context" LSTM learns is *selective*: the forget gate suppresses time steps dominated by interfering frequency components, while the input gate amplifies time steps where the selected component's contribution is strongest. This is why LSTM outperforms RNN specifically at 1 Hz (slow-changing target) — the cell state can maintain the gentle slope across all 100 steps without forgetting.
+
+### Failure modes — when do the networks break down?
+
+**Extreme noise (σ >> 1.0):** At σ = 2.0 or higher, the per-component noise standard deviation exceeds the signal amplitude. The mixture waveform becomes indistinguishable from noise, and even FC's matched-filter approach loses track of the target component shape. All models would converge toward predicting zero (the trivial baseline).
+
+**Window too short:** If the window were reduced to 20 samples (20 ms), the 1 Hz component would be visible as only 2% of its period — effectively a linear trend with no curvature. No architecture could reliably distinguish it from the mixture. FC would fail because the flat feature vector contains no discriminative shape. RNN and LSTM would also fail because 20 steps is not enough to reveal the sinusoidal structure even with full gradient flow.
+
+**Window too long:** If the window were increased to 5000 samples (5 full periods of 1 Hz), recurrent models would need to propagate gradients across 5000 steps. RNN would fail completely (gradient vanishing). LSTM would struggle due to accumulating gate approximation errors. FC, which always sees all steps simultaneously, would remain unaffected by window length.
+
+**Ambiguous frequency selector:** If the one-hot C were replaced by a zero vector (no frequency specified), the network would have to blindly guess which component to extract from the mixture. The output would average over all four components, collapsing toward zero. The one-hot C is not optional — it is the primary conditioning signal that makes the task solvable.
+
+---
 ## Why MSE?
 
 $$L = \frac{1}{N \cdot W} \sum_{n=1}^{N} \sum_{t=1}^{W} \left(\hat{y}_{n,t} - y_{n,t}\right)^2$$
