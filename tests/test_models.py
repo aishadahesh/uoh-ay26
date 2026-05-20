@@ -1,15 +1,17 @@
 """Unit tests for reconstruction models."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
 import pytest
 import torch
 import torch.nn as nn
 
-from src.models import CONTEXT_WINDOW, FC_INPUT_SIZE, SEQ_FEATURES, FCNet, LSTMNet, RNNNet
+from src.models import (
+    CONTEXT_WINDOW,
+    FC_INPUT_SIZE,
+    SEQ_FEATURES,
+    FCNet,
+    LSTMNet,
+    RNNNet,
+)
 
 BATCH = 8
 

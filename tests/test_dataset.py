@@ -1,10 +1,5 @@
 """Core unit tests for signal primitives and example generation."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
 import numpy as np
 
 from src.data_generator import (
