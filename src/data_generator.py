@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 
-from signals import (  # re-exported for backward compatibility
+from .signals import (  # re-exported for backward compatibility
     CONTEXT_WINDOW,
     FC_INPUT_SIZE,
     FREQUENCIES,

@@ -4,12 +4,12 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from data_generator import NOISE_LEVELS, get_dataloaders
-from pipeline import (
+from src.data_generator import NOISE_LEVELS, get_dataloaders
+from src.pipeline import (
     build_models,
     evaluate_all,
     make_plots,
@@ -17,7 +17,7 @@ from pipeline import (
     save_results,
     train_all,
 )
-from plots import plot_signals, plot_window_example
+from src.plots import plot_signals, plot_window_example
 
 
 def parse_args() -> argparse.Namespace:

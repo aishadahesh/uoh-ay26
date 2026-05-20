@@ -3,18 +3,18 @@
 import pandas as pd
 import torch
 
-from data_generator import NOISE_LEVELS, get_dataloaders
-from evaluate import evaluate_model, mse_per_frequency, mse_per_noise_level
-from evaluate import noise_sweep, save_metrics_csv
-from models import FCNet, LSTMNet, RNNNet
-from plots import (
+from .data_generator import NOISE_LEVELS, get_dataloaders
+from .evaluate import evaluate_model, mse_per_frequency, mse_per_noise_level, save_metrics_csv
+from .evaluate_sweep import noise_sweep
+from .models import FCNet, LSTMNet, RNNNet
+from .plots import (
     plot_mse_per_frequency,
     plot_noise_vs_mse,
     plot_prediction_vs_true,
     plot_reconstruction_per_freq,
     plot_training_loss,
 )
-from train import RESULTS_DIR, train_model
+from .train import RESULTS_DIR, train_model
 
 
 def build_models(selected: str) -> dict[str, torch.nn.Module]:

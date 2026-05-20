@@ -9,8 +9,8 @@ import pandas as pd
 import torch
 import torch.nn as nn
 
-from data_generator import CONTEXT_WINDOW, N_FREQS
-from evaluate_sweep import noise_sweep, save_metrics_csv as _save_metrics_csv
+from .data_generator import CONTEXT_WINDOW, N_FREQS
+from .evaluate_sweep import save_metrics_csv as _save_metrics_csv
 
 RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
 RESULTS_DIR.mkdir(exist_ok=True)

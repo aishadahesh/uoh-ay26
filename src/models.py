@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 
-from data_generator import CONTEXT_WINDOW, FC_INPUT_SIZE, SEQ_FEATURES
+from .data_generator import CONTEXT_WINDOW, FC_INPUT_SIZE, SEQ_FEATURES
 
 
 class FCNet(nn.Module):

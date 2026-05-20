@@ -9,7 +9,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from plot_style import FREQ_LABELS, FREQUENCIES, MODEL_COLORS, PLOTS_DIR, SAMPLE_RATE
+from .plot_style import FREQ_LABELS, FREQUENCIES, MODEL_COLORS, PLOTS_DIR, SAMPLE_RATE
 
 
 def plot_signals(noise_level: float = 0.10, save: bool = True) -> plt.Figure:

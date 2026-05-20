@@ -9,7 +9,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from plot_style import FREQ_LABELS, MODEL_COLORS, PLOTS_DIR
+from .plot_style import FREQ_LABELS, MODEL_COLORS, PLOTS_DIR
 
 
 def plot_mse_per_frequency(freq_mse_dict: dict[str, dict], save: bool = True):

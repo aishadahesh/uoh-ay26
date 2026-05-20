@@ -19,8 +19,8 @@ def noise_sweep(
     verbose: bool = False,
 ) -> list[dict]:
     """Train each model from scratch for each sigma and record test MSE."""
-    from evaluate import evaluate_model
-    from train import RESULTS_DIR, train_model
+    from .evaluate import evaluate_model
+    from .train import RESULTS_DIR, train_model
 
     results = []
     for cfg in model_configs:
