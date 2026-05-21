@@ -780,11 +780,13 @@ uoh-ay26/
 |   +-- config.py             <- shared constants (frequencies, noise levels, model colours)
 |
 +-- tests/
-|   +-- conftest.py           <- shared pytest fixtures and sys.path setup
-|   +-- test_dataset.py       <- signal primitive and example generation tests
-|   +-- test_dataset_loading.py <- dataset and DataLoader tests
-|   +-- test_models.py        <- model shape and gradient unit tests
-|   +-- test_training_evaluation.py  <- training loop, evaluation, pipeline tests
+|   +-- conftest.py              <- shared pytest fixtures and sys.path setup
+|   +-- test_dataset.py          <- signal primitive and example generation tests
+|   +-- test_dataset_loading.py  <- dataset and DataLoader tests
+|   +-- test_models.py           <- model shape and gradient unit tests
+|   +-- test_training.py         <- training loop and _mse_on_loader tests
+|   +-- test_evaluation.py       <- evaluate.py and evaluate_sweep.py tests
+|   +-- test_pipeline.py         <- pipeline helpers and plot import tests
 |
 +-- results/
 |   +-- metrics.csv           <- all numeric results
