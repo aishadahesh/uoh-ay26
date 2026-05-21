@@ -900,6 +900,7 @@ The table below maps each graded criterion (from the PRD success criteria and no
 | **Group code** | `uoh-ay26` |
 | **Assignment** | 01 &mdash; Signal Reconstruction |
 | **Submission file** | `uoh-ay26-ex01.pdf` |
+| **Contributors** | Aisha Abu Dahesh &middot; Yosef Asadi |
 
 ---
 
