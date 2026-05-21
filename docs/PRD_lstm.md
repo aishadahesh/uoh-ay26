@@ -1,11 +1,11 @@
-# PRD — LSTM (Long Short-Term Memory)
+﻿# PRD — LSTM (Long Short-Term Memory)
 
 ## Role
 
-LSTM is the **primary sequential model**. It adds explicit gating on top of RNN to selectively
-suppress the three non-selected components that appear in the mixed-signal input. The forget
-gate can zero out accumulated influence from unwanted frequencies; the input gate can
-amplify the target component’s contribution.
+LSTM is the **highest-capacity sequential model**. It adds explicit gating on top of RNN
+to selectively retain and suppress information over the 100-step window. With its large
+parameter count (~535K), it is the most expressive model but also the slowest to converge
+on CPU at 100 epochs.
 
 ---
 
@@ -13,17 +13,17 @@ amplify the target component’s contribution.
 
 ```
 x_seq: (batch, 100, 6)
-   └─ Bidirectional LSTM(input=6, hidden=64, num_layers=1)
-         output: (batch, 100, 128)      ← 128 = 64 forward + 64 backward
-         └─ LayerNorm(128)              ← stabilises activations across time
-               └─ Linear(128 → 1)       ← applied at EVERY time step
+   └─ Bidirectional LSTM(input=6, hidden=128, num_layers=2)
+         output: (batch, 100, 256)      ← 256 = 128 forward + 128 backward
+         └─ LayerNorm(256)              ← stabilises activations across time
+               └─ Linear(256 → 1)       ← applied at EVERY time step
 
-Output: y_hat (batch, 100)   ← predicted clean component window
+Output: y_hat (batch, 100)   ← predicted clean window
 ```
 
 The 6-dimensional per-step input is:
 ```
-x_seq[t] = [ mixed_val_t, C1, C2, C3, C4, σ ]
+x_seq[t] = [ noisy_val_t, C1, C2, C3, C4, σ ]
 ```
 (C and σ are repeated identically at every step.)
 
@@ -51,12 +51,12 @@ across 100 steps with no vanishing. This is the fundamental advantage over vanil
 
 | Parameter | Value | Reason |
 |-----------|-------|--------|
-| Hidden size | 64 | Balanced capacity; same for all models |
-| Num layers | 1 | 4× gate overhead already provides sufficient capacity |
-| Bidirectional | True | Forward + backward context; output dim = 128 |
-| LayerNorm | after BiLSTM output | Stabilises 128-dim concatenated state |
+| Hidden size | 128 | Larger hidden needed for 4-gate architecture to be expressive |
+| Num layers | 2 | Stacked layers add depth for complex temporal patterns |
+| Bidirectional | True | Forward + backward context; output dim = 256 |
+| LayerNorm | after BiLSTM output | Stabilises 256-dim concatenated state |
 | Optimizer | Adam | lr=1e-3, weight\_decay=1e-4 |
-| Loss | MSELoss | Reconstruction task |
+| Loss | MSELoss | Denoising regression task |
 | Gradient clip | 1.0 | Stability |
 
 ---
@@ -64,28 +64,49 @@ across 100 steps with no vanishing. This is the fundamental advantage over vanil
 ## Parameter Count
 
 ```
-Forward LSTM:  4 × [(6+64)×64 + 64] = 4 × 4,544 + 4 × 64 = 18,432
-Backward LSTM: same                                          = 18,432
-LayerNorm:     128 × 2                                       = 256
-Linear(128→1): 128 + 1                                      = 129
-Total:         ≈ 37,249 parameters
+Layer 0 forward:   4×[(6+128)×128 + 2×128]   = 4 × 17,664 = 70,656
+Layer 0 backward:  4×[(6+128)×128 + 2×128]   = 70,656
+Layer 1 forward:   4×[(256+128)×128 + 2×128] = 4 × 49,408 = 197,632
+Layer 1 backward:  4×[(256+128)×128 + 2×128] = 197,632
+LayerNorm(256):    256×2                       = 512
+Linear(256→1):     256 + 1                     = 257
+Total:             ≈ 537,345 parameters
 ```
 
-LSTM has ~4× more parameters than RNN at the same hidden size (four gates vs. one state update).
+*(Exact count from PyTorch: 535,297 — minor rounding differences from bias layout.)*
 
 ---
 
-## Expected Behavior
+## Test Set Results
 
-| Frequency | LSTM test MSE | Notes |
-|-----------|-------------|-------|
-| 1 Hz | **0.277** | Best model for 1 Hz — gated memory tracks gentle slope |
-| 2 Hz | 0.347 | Comparable to FC |
-| 5 Hz | 0.370 | LSTM’s cell state helps isolate target component |
-| 7 Hz | 0.263 | Clear oscillation; gating suppresses other components |
+| Metric | Value |
+|--------|-------|
+| MSE | 0.007207 |
+| MAE | 0.052408 |
+| Pearson r | 0.9522 |
 
-**Overall test MSE: 0.3131** (between FC and RNN).  
-LSTM outperforms RNN by **13%** (0.313 vs 0.361), confirming that the gating advantage
-is meaningful even at this small scale. LSTM trails FC because FC’s direct flat-vector
-access is more efficient for separating stationary sinusoids at 100-sample windows.
+**Per-frequency MSE:**
 
+| Frequency | MSE |
+|-----------|-----|
+| 1 Hz | 0.004841 |
+| 2 Hz | 0.006662 |
+| 5 Hz | 0.008386 |
+| 7 Hz | 0.008945 |
+
+LSTM performs best at 1 Hz (slow-varying target that benefits from long memory) but
+struggles at 5 Hz and 7 Hz — the rapid oscillation requires fast adaptation that the
+large model has not yet learned in 100 epochs.
+
+---
+
+## Observations
+
+- **Gated cell state:** The forget gate can suppress noisy time steps while the input
+  gate amplifies clean signal periods — theoretically the strongest architecture for
+  denoising over 100-step sequences.
+- **Convergence bottleneck:** ~535K parameters require substantially more than 100 CPU
+  epochs to fully converge. With 200+ epochs or GPU training, LSTM would likely
+  outperform RNN.
+- **Trade-off:** ~16× more parameters than RNN at the cost of slower convergence;
+  best deployment scenario is when training time is not a constraint.

@@ -1,10 +1,10 @@
-# PRD — Vanilla RNN (BiRNN)
+﻿# PRD — Vanilla RNN (BiRNN)
 
 ## Role
 
-BiRNN is the **sequential baseline**. It processes the 100-step mixed-signal sequence
-in both directions simultaneously, using gating-free `tanh` recurrence to track which
-component to extract at each time step.
+BiRNN is the **sequential baseline** and **overall winner**. It processes the 100-step
+noisy sequence in both directions, using gating-free `tanh` recurrence to denoise
+the sinusoidal signal at each time step.
 
 ---
 
@@ -12,17 +12,17 @@ component to extract at each time step.
 
 ```
 x_seq: (batch, 100, 6)
-   └─ Bidirectional RNN(input=6, hidden=64, num_layers=1, nonlinearity=tanh)
+   └─ Bidirectional RNN(input=6, hidden=64, num_layers=2, nonlinearity=tanh)
          output: (batch, 100, 128)      ← 128 = 64 forward + 64 backward
          └─ LayerNorm(128)              ← stabilises activations across time
                └─ Linear(128 → 1)       ← applied at EVERY time step
 
-Output: y_hat (batch, 100)   ← predicted clean component window
+Output: y_hat (batch, 100)   ← predicted clean window
 ```
 
 The 6-dimensional per-step input is:
 ```
-x_seq[t] = [ mixed_val_t, C1, C2, C3, C4, σ ]
+x_seq[t] = [ noisy_val_t, C1, C2, C3, C4, σ ]
 ```
 (C and σ are repeated identically at every step.)
 
@@ -35,53 +35,57 @@ and Xavier uniform for input matrices to improve gradient flow.
 
 | Parameter | Value | Reason |
 |-----------|-------|--------|
-| Hidden size | 64 | Balanced capacity; same for all models |
-| Num layers | 1 | Deeper stacking not needed at this scale |
-| Bidirectional | True | Doubles effective hidden size; FC cannot match this cheaply |
+| Hidden size | 64 | Sufficient capacity for denoising; weight-sharing across 100 steps |
+| Num layers | 2 | Stacked layers add depth; second layer learns higher-order patterns |
+| Bidirectional | True | Each output step sees full past + future context |
 | LayerNorm | after BiRNN output | Prevents activation drift over 100 steps |
 | Optimizer | Adam | lr=1e-3, weight\_decay=1e-4 |
-| Loss | MSELoss | Reconstruction task |
-| Gradient clip | 1.0 | Prevents exploding gradients from long-range BPTT |
+| Loss | MSELoss | Denoising regression task |
+| Gradient clip | 1.0 | Prevents exploding gradients from BPTT |
 
 ---
 
 ## Parameter Count
 
 ```
-Forward RNN:   (6+64)×64 + 64 = 4,544 + 64 = 4,608
-Backward RNN:  same            = 4,608
-LayerNorm:     128×2           = 256
-Linear(128→1): 128 + 1         = 129
-Total:         ≈ 9,601 parameters
+Layer 0 forward:   (6+64)×64  + 2×64  = 4,608
+Layer 0 backward:  (6+64)×64  + 2×64  = 4,608
+Layer 1 forward:   (128+64)×64 + 2×64 = 12,416
+Layer 1 backward:  (128+64)×64 + 2×64 = 12,416
+LayerNorm(128):    128×2               = 256
+Linear(128→1):     128 + 1             = 129
+Total:             ≈ 34,433 parameters
 ```
 
 ---
 
-## Vanishing Gradient Limitation
+## Test Set Results
 
-The standard RNN update:
-```
-h_t = tanh(W_h · h_{t-1} + W_x · x_t + b)
-```
-multiplies the gradient by `∂h_t/∂h_{t−1}` at each step. For a 100-step window, gradients
-for early steps can vanish if the spectral norm of `W_h · diag(tanh’) < 1`.
+| Metric | Value |
+|--------|-------|
+| MSE | **0.005266** ← best overall |
+| MAE | **0.045079** |
+| Pearson r | **0.9609** |
 
-Bidirectionality partially mitigates this: the backward pass reads the sequence in reverse,
-so any step is at most 50 steps from the nearest sequence end. But it does not eliminate
-the issue for slow-varying 1 Hz components that need the full 100-step trend.
+**Per-frequency MSE:**
+
+| Frequency | MSE |
+|-----------|-----|
+| 1 Hz | 0.004416 |
+| 2 Hz | 0.005789 |
+| 5 Hz | 0.005111 |
+| 7 Hz | 0.005709 |
+
+RNN achieves the lowest MSE at all four frequencies.
 
 ---
 
-## Expected Behavior
+## Observations
 
-| Frequency | RNN test MSE | Notes |
-|-----------|-------------|-------|
-| 1 Hz | 0.321 | Near-linear window; RNN struggles with gentle slope |
-| 2 Hz | 0.367 | Some oscillation visible; moderate performance |
-| 5 Hz | 0.382 | 5 cycles in window; harder interference separation |
-| 7 Hz | 0.375 | Clear oscillation but RNN cannot gate interference |
-
-**Overall test MSE: 0.3609** (worst of the three models).  
-RNN loses to LSTM because it has no mechanism to selectively suppress the three
-non-selected components that appear in the mixed signal.
-
+- **2-layer stacking:** The second recurrent layer builds higher-order temporal
+  abstractions, improving denoising over a single-layer BiRNN.
+- **Bidirectionality:** Each output step sees full past + future context — important
+  for sinusoidal denoising since the waveform shape extends in both directions.
+- **Orthogonal init** preserves gradient norms; avoids early vanishing through 100 steps.
+- **Winner at 100 epochs:** RNN's ~34K parameters converge faster than LSTM's ~535K,
+  making RNN the best model within the 100-epoch CPU training budget.

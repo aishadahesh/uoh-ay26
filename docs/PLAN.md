@@ -65,7 +65,7 @@ make_example()
 - [x] `test_models.py`: output shapes, gradient flow, MSE loss, determinism
 
 ### Phase 8 — Documentation & GitHub
-- [ ] README.md: full lab report with plots and analysis tables
+- [x] README.md: full lab report with plots and analysis tables
 - [x] pyproject.toml: all dependencies
 - [x] .gitignore
 
