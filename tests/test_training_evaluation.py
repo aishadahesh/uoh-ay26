@@ -105,17 +105,18 @@ class TestTrainModel:
         out = capsys.readouterr().out
         assert "Epoch" in out or "Best val" in out
 
-    def test_early_stopping_triggers(self, tiny_loaders, capsys):
+    def test_early_stopping_triggers(self, capsys):
         """patience=1 should trigger early stopping with verbose message."""
-        tr, va, _ = tiny_loaders
+        # Use a tiny 20-sample dataset so the model overfits and val MSE rises.
+        tr, va, _ = get_dataloaders(n_samples=20, batch_size=10, seed=42)
         model = FCNet(hidden_size=16)
         hist = train_model(
             model, tr, va,
-            n_epochs=20, patience=1, device=DEVICE,
+            n_epochs=100, patience=1, device=DEVICE,
             model_name="_test_early", verbose=True,
         )
-        # With patience=1 training stops well before 20 epochs
-        assert len(hist["train_loss"]) < 20
+        # With patience=1 on a 20-sample dataset, early stopping triggers before 100 epochs
+        assert len(hist["train_loss"]) < 100
 
     def test_mse_on_loader_finite(self, tiny_loaders, tiny_model):
         _, va, _ = tiny_loaders
