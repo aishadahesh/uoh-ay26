@@ -540,36 +540,60 @@ MSE at σ=0.00 (near-perfect denoising when there is no noise).
 
 **RNN wins overall** with the lowest test MSE (0.005266) and highest correlation (0.9609).
 
+**Why this task is harder than plain denoising:**
+The network must simultaneously suppress Gaussian noise on the target component *and*
+suppress the interference from the three other frequency components present in the
+mixture. Even at σ = 0 (no noise) the input is still a sum of four clean sinusoids —
+the model must perform pure frequency separation. The one-hot selector `c` is the only
+cue that steers the model toward the correct component; without it, the problem is
+underdetermined.
+
+**What MSE at σ = 0 tells us:**
+At σ = 0 the noisy mixed signal is a sum of four *clean* sinusoids. The near-zero MSE
+(FC: 8.5 × 10⁻⁵, RNN: 6.3 × 10⁻⁵, LSTM: 4.6 × 10⁻⁵) means all three architectures
+learn to cleanly separate the requested component from the mixture, with essentially no
+residual interference from the other three frequencies. This confirms the models have
+internalised the one-hot conditioning.
+
 **Why does RNN beat FC (0.005266 vs 0.007321)?**
 The 2-layer bidirectional RNN processes the 100-sample window sequentially, building a
-hidden-state summary that captures the temporal shape of the sinusoid step-by-step.
-FC sees all 100 samples as a flat vector without temporal ordering - effective but limited
-by its small hidden layer (16 units). The RNN's weight-sharing and two-layer depth
-more than compensate for the lack of gating.
+hidden-state summary that captures the temporal shape of the target sinusoid step-by-step.
+Crucially, the hidden state accumulates evidence for the waveform's frequency over time,
+making it better at rejecting the interfering components from the mixture.
+FC sees all 100 mixed samples as a flat vector: it learns a static linear projection
+indexed by (C, sigma), but without temporal processing it is less able to suppress
+components that happen to alias with the target over the 100-sample window.
 
 **Why does RNN beat LSTM (0.005266 vs 0.007207)?**
 With 100 training epochs on CPU, LSTM's much larger parameter count (~535K vs ~34K) is
-a disadvantage: the model has not fully converged by epoch 100. LSTM would likely surpass
-RNN with longer training (200+ epochs or GPU). At the current training budget, RNN's
-simpler update rule and smaller parameter count converge faster to a better local minimum.
+a disadvantage: the model has not fully converged by epoch 100. The separation task
+demands that LSTM's four gates learn to actively suppress three competing frequency
+components — a significantly larger optimisation target than for RNN. LSTM would likely
+surpass RNN with longer training (200+ epochs or GPU). At the current training budget,
+RNN's simpler update rule and smaller parameter count converge faster to a better
+local minimum.
 
 **Per-frequency breakdown:**
 
 | Frequency | RNN MSE | LSTM MSE | FC MSE | Observation |
 |-----------|---------|----------|--------|-------------|
-| 1 Hz | **0.004416** | 0.004841 | 0.006636 | RNN best - slow trend captured by temporal context |
-| 2 Hz | **0.005789** | 0.006662 | 0.007548 | RNN best at all frequencies |
-| 5 Hz | **0.005111** | 0.008386 | 0.007495 | LSTM struggles - largest model, slowest to converge |
-| 7 Hz | **0.005709** | 0.008945 | 0.007580 | RNN best - clear oscillation well handled |
+| 1 Hz | **0.004416** | 0.004841 | 0.006636 | 1 Hz looks nearly flat in 100 ms — all models mistake its slow trend for interference from low-freq residuals |
+| 2 Hz | **0.005789** | 0.006662 | 0.007548 | Slight curvature visible; RNN's temporal pass tracks it better than FC's flat projection |
+| 5 Hz | **0.005111** | 0.008386 | 0.007495 | Half-sine arch clearly distinguishable; LSTM struggles most here — large model, slowest to converge |
+| 7 Hz | **0.005709** | 0.008945 | 0.007580 | ~70% of a period visible; waveform is unambiguous, yet LSTM still underperforms RNN |
 
-RNN achieves the lowest MSE at all four frequencies. LSTM underperforms at 5 Hz and 7 Hz,
-suggesting its large parameter count has not converged in 100 epochs.
-FC is consistent across frequencies - its simple matched-filter approach works equally
-well regardless of frequency.
+RNN achieves the lowest MSE at all four frequencies. The gap widens at 5 and 7 Hz where
+LSTM's unconverged gates are least effective at separating the fast oscillations from
+lower-frequency interference. FC is consistent across all frequencies because the one-hot
+`c` gives it a hard frequency index — it learns a different static projection per class,
+which works well when the target shape is clearly identifiable in the window.
 
 **Noise sensitivity:**
-All models' MSE increases monotonically with sigma. The near-zero MSE floor at sigma = 0
-confirms that without noise all three models reconstruct the sinusoid almost perfectly.
+All models' MSE increases monotonically with sigma. At σ = 0 the task is pure frequency
+separation (no noise), and all three models achieve near-zero MSE — confirming that the
+architectures have learned to use the one-hot selector as a conditioning prompt. As sigma
+increases, noise adds a second source of uncertainty on top of the mixture interference,
+and MSE rises proportionally for all models.
 
 ---
 
@@ -736,6 +760,8 @@ uoh-ay26/
 +-- uv.lock                   <- locked dependency graph (uv)
 +-- .env-example              <- environment variable template (no secrets)
 +-- analysis.ipynb            <- parameter sensitivity analysis notebook
++-- check_cuda.py             <- CUDA availability check utility
++-- fix_readme.ps1            <- one-off README formatting script
 |
 +-- src/
 |   +-- __init__.py           <- package entry point; re-exports public API
@@ -751,16 +777,18 @@ uoh-ay26/
 |   +-- plot_comparison.py    <- per-frequency and noise-sweep comparison plots
 |   +-- plot_style.py         <- shared colours, labels, directory constant
 |   +-- main.py               <- CLI entry point
-|   +-- config.py             <- legacy constants (unused; preserved for reference)
+|   +-- config.py             <- shared constants (frequencies, noise levels, model colours)
 |
 +-- tests/
 |   +-- conftest.py           <- shared pytest fixtures and sys.path setup
-|   +-- test_dataset.py       <- dataset unit tests
+|   +-- test_dataset.py       <- signal primitive and example generation tests
+|   +-- test_dataset_loading.py <- dataset and DataLoader tests
 |   +-- test_models.py        <- model shape and gradient unit tests
 |   +-- test_training_evaluation.py  <- training loop, evaluation, pipeline tests
 |
 +-- results/
 |   +-- metrics.csv           <- all numeric results
+|   +-- *.pt                  <- model checkpoints (best weights per model / sigma)
 |   +-- plots/
 |       +-- signals.png
 |       +-- window_example.png
@@ -769,14 +797,18 @@ uoh-ay26/
 |       +-- reconstruction_per_freq.png
 |       +-- mse_per_frequency.png
 |       +-- noise_vs_mse.png
-|       +-- sensitivity_analysis.png
-|       +-- sensitivity_heatmap.png
 |
 +-- docs/
-    +-- PRD.md                <- product requirements
-    +-- PLAN.md               <- implementation plan
-    +-- TODO.md               <- task tracker
-    +-- PROMPT_BOOK.md        <- prompt engineering log
+|   +-- PRD.md                <- product requirements (main)
+|   +-- PRD_dataset.md        <- dataset PRD detail
+|   +-- PRD_fc.md             <- FC model PRD detail
+|   +-- PRD_rnn.md            <- RNN model PRD detail
+|   +-- PRD_lstm.md           <- LSTM model PRD detail
+|   +-- PLAN.md               <- implementation plan
+|   +-- TODO.md               <- task tracker
+|   +-- PROMPT_BOOK.md        <- prompt engineering log
+|
++-- ref/                      <- course reference materials (PDFs and slides)
 ```
 
 ---
@@ -821,7 +853,7 @@ The table below maps each graded criterion (from the PRD success criteria and no
 
 | Component | Requirement | Delivered | Score |
 |-----------|-------------|-----------|-------|
-| Dataset | Single-component denoising + DataLoader | `data_generator.py` with single sinusoid + 70/15/15 split | &#10004; Full |
+| Dataset | Mixed-signal component extraction + DataLoader | `data_generator.py` — 4-component mixture, 70/15/15 split | &#10004; Full |
 | FC model | Linear baseline | `FCNet` (Linear 105&rarr;16&rarr;100, ~3.4K params) | &#10004; Full |
 | RNN model | Sequential processing | Bidirectional `RNNNet` hidden=64, 2 layers + LayerNorm + ortho-init | &#10004; Full |
 | LSTM model | Gated memory | Bidirectional `LSTMNet` hidden=128, 2 layers + LayerNorm + ortho-init | &#10004; Full |
@@ -852,12 +884,12 @@ The table below maps each graded criterion (from the PRD success criteria and no
 
 | Category | Max | Recommended Self-Score | Rationale |
 |----------|-----|----------------------|-----------|
-| Correct implementation (all 3 models) | 30 | **30 / 30** | All three models train, converge, and produce valid reconstructions on the denoising task |
-| Results meet success criteria | 25 | **21 / 25** | F1, F3, F4 all met; F2 not met (LSTM > RNN due to convergence budget); RNN winning is theoretically expected and justified |
+| Correct implementation (all 3 models) | 30 | **30 / 30** | All three models train, converge, and produce valid component extractions on the mixed-signal task |
+| Results meet success criteria | 25 | **18 / 25** | F1, F3, F4 all met; F2 not met (LSTM > RNN due to convergence budget on the harder separation task); RNN winning is theoretically expected and justified |
 | Testing | 20 | **20 / 20** | 72 / 72 tests pass, 90% coverage; covers shapes, noise, reproducibility, gradient flow, training loop, pipeline |
-| Documentation &amp; analysis | 15 | **15 / 15** | README includes denoising description, architecture diagrams, parameter rationale, per-frequency breakdown, noise sweep analysis |
+| Documentation &amp; analysis | 15 | **15 / 15** | README includes mixed-signal task description, architecture diagrams, parameter rationale, per-frequency breakdown, noise sweep analysis |
 | Code quality &amp; structure | 10 | **10 / 10** | Formal `src/` package with relative imports; all files &le; 150 lines; Ruff 0 violations; 90% test coverage enforced |
-| **Total** | **100** | **96 / 100** | |
+| **Total** | **100** | **93 / 100** | |
 
 ---
 
