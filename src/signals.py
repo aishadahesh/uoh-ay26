@@ -1,4 +1,4 @@
-"""Low-level signal primitives for mixed-signal component separation.
+"""Low-level signal primitives for single-component sinusoidal denoising.
 
 Exports all shared constants and the four pure-numpy helper functions
 used by both the dataset and the visualisation layer.
@@ -48,17 +48,17 @@ def make_example(
     frequencies: list = FREQUENCIES,
     noise_levels: list = NOISE_LEVELS,
 ) -> tuple[np.ndarray, float, np.ndarray, np.ndarray]:
-    """One mixed-signal separation example.
+    """One mixed-signal component extraction example (PRD spec).
 
-    All four components are generated with independent A and phi, each
-    noise-corrupted individually, then summed.  The network receives the
-    noisy mixture and must recover the clean selected component.
+    All frequency components are independently generated and summed into
+    a single noisy mixture.  The network receives the mixture window and
+    must reconstruct the clean version of the component indicated by C.
 
     Returns
     -------
-    C            : float32 [N_FREQS]       one-hot frequency selector
-    sigma        : float                   noise level used
-    noisy_window : float32 [CONTEXT_WINDOW] noisy mixed-signal slice
+    C            : float32 [N_FREQS]        one-hot frequency selector
+    sigma        : float                    noise level used
+    noisy_window : float32 [CONTEXT_WINDOW] noisy mixed signal slice
     clean_window : float32 [CONTEXT_WINDOW] clean target component slice
     """
     c_idx = int(np.random.randint(0, len(frequencies)))
@@ -66,21 +66,21 @@ def make_example(
     sigma = float(np.random.choice(noise_levels))
     start = int(np.random.randint(0, N_TOTAL - CONTEXT_WINDOW))
 
-    mixed_noisy = np.zeros(N_TOTAL, dtype=np.float32)
-    clean_target: np.ndarray | None = None
-
+    # Generate all components; accumulate into mixture.
+    mixed = np.zeros(N_TOTAL, dtype=np.float32)
+    target_clean = np.zeros(N_TOTAL, dtype=np.float32)
     for i, freq in enumerate(frequencies):
-        A_i = float(np.random.uniform(0.7, 1.3))
-        phi_i = float(np.random.uniform(0.0, 2.0 * np.pi))
-        clean_i = generate_clean_signal(freq, A_i, phi_i)
-        noisy_i = add_gaussian_noise(clean_i, A_i, sigma)
-        mixed_noisy += noisy_i
+        A = float(np.random.uniform(0.7, 1.3))
+        phi = float(np.random.uniform(0.0, 2.0 * np.pi))
+        clean_i = generate_clean_signal(freq, A, phi)
+        noisy_i = add_gaussian_noise(clean_i, A, sigma)
+        mixed += noisy_i
         if i == c_idx:
-            clean_target = clean_i
+            target_clean = clean_i
 
     return (
         C,
         sigma,
-        mixed_noisy[start : start + CONTEXT_WINDOW],
-        clean_target[start : start + CONTEXT_WINDOW],
+        mixed[start : start + CONTEXT_WINDOW],
+        target_clean[start : start + CONTEXT_WINDOW],
     )

@@ -9,7 +9,7 @@ from .data_generator import CONTEXT_WINDOW, FC_INPUT_SIZE, SEQ_FEATURES
 class FCNet(nn.Module):
     """Flat baseline: [batch, 105] -> [batch, 100]."""
 
-    def __init__(self, hidden_size: int = 64) -> None:
+    def __init__(self, hidden_size: int = 16) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(FC_INPUT_SIZE, hidden_size),
@@ -33,7 +33,7 @@ def _init_recurrent_weights(module: nn.Module) -> None:
 class RNNNet(nn.Module):
     """Bidirectional many-to-many RNN: [batch, 100, 6] -> [batch, 100]."""
 
-    def __init__(self, hidden_size: int = 64, num_layers: int = 1) -> None:
+    def __init__(self, hidden_size: int = 64, num_layers: int = 2) -> None:
         super().__init__()
         self.rnn = nn.RNN(
             SEQ_FEATURES,
@@ -56,7 +56,7 @@ class RNNNet(nn.Module):
 class LSTMNet(nn.Module):
     """Bidirectional many-to-many LSTM: [batch, 100, 6] -> [batch, 100]."""
 
-    def __init__(self, hidden_size: int = 64, num_layers: int = 1) -> None:
+    def __init__(self, hidden_size: int = 128, num_layers: int = 2) -> None:
         super().__init__()
         self.lstm = nn.LSTM(
             SEQ_FEATURES,

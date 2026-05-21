@@ -53,7 +53,7 @@ def plot_window_example(save: bool = True) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(steps, clean_w, "o-", color="steelblue", label="clean target", linewidth=2)
     ax.plot(steps, noisy_w, "s--", color="tomato",
-            label=f"noisy input (sigma={sigma:.2f})", linewidth=1.5, alpha=0.85)
+            label=f"noisy mixed input (sigma={sigma:.2f})", linewidth=1.5, alpha=0.85)
     ax.set_title(f"Window example - {FREQ_LABELS[int(np.argmax(C))]}")
     ax.set_xlabel("Sample index")
     ax.set_ylabel("Amplitude")
@@ -91,19 +91,35 @@ def plot_training_loss(histories: dict[str, dict], save: bool = True) -> plt.Fig
 
 
 def plot_prediction_vs_true(eval_results: dict, save: bool = True) -> plt.Figure:
-    """For each model show one example: predicted window vs true clean window."""
+    """For each model show one example: predicted window vs true clean window.
+
+    Picks the 7 Hz test example whose per-sample MSE is closest to the median
+    of all 7 Hz examples (most representative, not cherry-picked best/worst).
+    """
+    # Use the first model's results to choose the representative index
+    first_res = next(iter(eval_results.values()))
+    mask_7hz = first_res["c_idx"] == 3          # index 3 = 7 Hz
+    idx_7hz = np.where(mask_7hz)[0]
+    per_sample_mse = np.mean(
+        (first_res["y_pred"][mask_7hz] - first_res["y_true"][mask_7hz]) ** 2,
+        axis=1,
+    )
+    median_pos = np.argmin(np.abs(per_sample_mse - np.median(per_sample_mse)))
+    pick = idx_7hz[median_pos]          # global index into y_true / y_pred
+
     fig, axes = plt.subplots(1, len(eval_results), figsize=(6 * len(eval_results), 4))
     axes = [axes] if len(eval_results) == 1 else axes
     for ax, (name, res) in zip(axes, eval_results.items()):
         steps = np.arange(res["y_true"].shape[1])
-        ax.plot(steps, res["y_true"][0], "o-", color="steelblue", label="clean", linewidth=2)
-        ax.plot(steps, res["y_pred"][0], "s--", color=MODEL_COLORS.get(name, "gray"),
+        ax.plot(steps, res["y_true"][pick], "o-", color="steelblue", label="clean", linewidth=2)
+        ax.plot(steps, res["y_pred"][pick], "s--", color=MODEL_COLORS.get(name, "gray"),
                 label=f"{name} pred", linewidth=1.5)
         ax.set_title(f"{name} (MSE={res['mse']:.6f})")
         ax.set_xlabel("Sample index")
         ax.set_ylabel("Amplitude")
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
+    fig.suptitle("Prediction vs True — representative 7 Hz example", fontsize=11)
     plt.tight_layout()
     if save:
         p = PLOTS_DIR / "prediction_vs_true.png"

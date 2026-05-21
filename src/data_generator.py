@@ -1,10 +1,9 @@
-"""PyTorch Dataset and DataLoader for the mixed-signal separation task.
+"""PyTorch Dataset and DataLoader for the single-component denoising task.
 
 All signal-generation logic lives in signals.py.  This module only
 handles dataset construction and DataLoader creation.
 Everything is re-exported here so existing imports from data_generator
-continue to work without modification.
-"""
+continue to work without modification."""
 
 from __future__ import annotations
 
