@@ -886,12 +886,12 @@ The table below maps each graded criterion (from the PRD success criteria and no
 
 | Category | Max | Recommended Self-Score | Rationale |
 |----------|-----|----------------------|-----------|
-| Correct implementation (all 3 models) | 30 | **30 / 30** | All three models train, converge, and produce valid component extractions on the mixed-signal task |
+| Correct implementation (all 3 models) | 30 | **28 / 30** | All three models train and produce valid component extractions; minor deduction because LSTM does not fully converge within the 100-epoch CPU budget, leaving its gates under-trained relative to its capacity |
 | Results meet success criteria | 25 | **18 / 25** | F1, F3, F4 all met; F2 not met (LSTM > RNN due to convergence budget on the harder separation task); RNN winning is theoretically expected and justified |
 | Testing | 20 | **20 / 20** | 72 / 72 tests pass, 90% coverage; covers shapes, noise, reproducibility, gradient flow, training loop, pipeline |
-| Documentation &amp; analysis | 15 | **15 / 15** | README includes mixed-signal task description, architecture diagrams, parameter rationale, per-frequency breakdown, noise sweep analysis |
-| Code quality &amp; structure | 10 | **10 / 10** | Formal `src/` package with relative imports; all files &le; 150 lines; Ruff 0 violations; 90% test coverage enforced |
-| **Total** | **100** | **93 / 100** | |
+| Documentation &amp; analysis | 15 | **12 / 15** | README covers architecture, rationale, and results; deduction for limited ablation depth — no cross-validation, no statistical significance tests, and the notebook analysis is exploratory rather than systematic |
+| Code quality &amp; structure | 10 | **8 / 10** | Ruff 0 violations and modular layout; minor deduction for lack of type annotations on public functions and absence of inline docstrings in non-trivial modules |
+| **Total** | **100** | **86 / 100** | |
 
 ---
 
